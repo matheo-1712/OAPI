@@ -29,6 +29,17 @@ async fn main() {
         .with(tracing_subscriber::fmt::layer())
         .init();
 
+    let banner = r#"
+  ____               ____    ___ 
+ / __ \     /\      |  _ \  |_ _|
+| |  | |   /  \     | |_) |  | | 
+| |  | |  / /\ \    |  __/   | | 
+| |__| | / ____ \   | |     _| |_
+ \____/ /_/    \_\  |_|    |_____|
+                                  
+    "#;
+    println!("{}", banner);
+
     // Build our application with routes
     let app = Router::new()
         // API routes
@@ -42,8 +53,11 @@ async fn main() {
 
     // Run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    tracing::info!("listening on http://{}", addr);
-    tracing::info!("Swagger UI available at http://{}/swagger-ui", addr);
+    
+    tracing::info!("🚀 OAPI Server starting up...");
+    tracing::info!("📡 Listening on http://{}", addr);
+    tracing::info!("📖 Swagger UI available at http://{}/swagger-ui", addr);
+    tracing::info!("🌐 Web interface available at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
