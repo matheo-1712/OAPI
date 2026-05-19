@@ -1,5 +1,6 @@
 use axum::{Json, http::StatusCode};
 use crate::models::{Item, CreateItem};
+use tracing::{info, debug};
 
 /// Get a list of items
 #[utoipa::path(
@@ -10,6 +11,7 @@ use crate::models::{Item, CreateItem};
     )
 )]
 pub async fn get_items() -> Json<Vec<Item>> {
+    info!("Fetching all items");
     let items = vec![
         Item {
             id: 1,
@@ -22,6 +24,7 @@ pub async fn get_items() -> Json<Vec<Item>> {
             description: None,
         },
     ];
+    debug!("Returning {} items", items.len());
     Json(items)
 }
 
@@ -35,10 +38,12 @@ pub async fn get_items() -> Json<Vec<Item>> {
     )
 )]
 pub async fn create_item(Json(payload): Json<CreateItem>) -> (StatusCode, Json<Item>) {
+    info!("Creating a new item: {}", payload.name);
     let item = Item {
         id: 3,
         name: payload.name,
         description: payload.description,
     };
+    debug!("Item created with id: {}", item.id);
     (StatusCode::CREATED, Json(item))
 }

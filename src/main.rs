@@ -6,9 +6,10 @@ use axum::{
     Router,
 };
 use std::net::SocketAddr;
-use tower_http::services::ServeDir;
+use tower_http::{services::ServeDir, trace::TraceLayer};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
+use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(OpenApi)]
 #[openapi(
@@ -19,6 +20,15 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
+    // Initialize tracing
+    tracing_subscriber::registry()
+        .with(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "oapi=debug,tower_http=debug".into()),
+        )
+        .with(tracing_subscriber::fmt::layer())
+        .init();
+
     // Build our application with routes
     let app = Router::new()
         // API routes
@@ -26,12 +36,14 @@ async fn main() {
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         // Serve static files from the "public" directory
-        .fallback_service(ServeDir::new("public"));
+        .fallback_service(ServeDir::new("public"))
+        // Add logging middleware
+        .layer(TraceLayer::new_for_http());
 
     // Run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
-    println!("listening on http://{}", addr);
-    println!("Swagger UI available at http://{}/swagger-ui", addr);
+    tracing::info!("listening on http://{}", addr);
+    tracing::info!("Swagger UI available at http://{}/swagger-ui", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
