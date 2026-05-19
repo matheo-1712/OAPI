@@ -3,40 +3,159 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>API Foundation</title>
+    <title>OAPI - Dark Dashboard</title>
     <style>
+        :root {
+            --bg-color: #121212;
+            --surface-color: #1e1e1e;
+            --primary-color: #bb86fc;
+            --secondary-color: #03dac6;
+            --text-color: #e0e0e0;
+            --text-muted: #a0a0a0;
+            --error-color: #cf6679;
+        }
+
         body {
-            font-family: sans-serif;
+            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+            background-color: var(--bg-color);
+            color: var(--text-color);
+            margin: 0;
             display: flex;
             flex-direction: column;
             align-items: center;
-            justify-content: center;
-            height: 100vh;
-            margin: 0;
-            background-color: #f0f2f5;
+            min-height: 100vh;
         }
-        .container {
+
+        header {
+            width: 100%;
+            padding: 2rem 0;
+            background-color: var(--surface-color);
+            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
             text-align: center;
-            padding: 2rem;
-            background: white;
-            border-radius: 8px;
-            box-shadow: 0 4px 6px rgba(0,0,0,0.1);
+            margin-bottom: 2rem;
         }
+
+        h1 {
+            margin: 0;
+            color: var(--primary-color);
+            letter-spacing: 2px;
+        }
+
+        .container {
+            width: 90%;
+            max-width: 800px;
+            display: flex;
+            flex-direction: column;
+            gap: 1.5rem;
+        }
+
+        .card {
+            background-color: var(--surface-color);
+            padding: 1.5rem;
+            border-radius: 8px;
+            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
+        }
+
+        .links {
+            display: flex;
+            gap: 1rem;
+            justify-content: center;
+        }
+
         a {
-            color: #007bff;
+            color: var(--secondary-color);
             text-decoration: none;
             font-weight: bold;
+            padding: 0.5rem 1rem;
+            border: 1px solid var(--secondary-color);
+            border-radius: 4px;
+            transition: all 0.3s ease;
         }
+
         a:hover {
-            text-decoration: underline;
+            background-color: var(--secondary-color);
+            color: var(--bg-color);
+        }
+
+        #items-list {
+            list-style: none;
+            padding: 0;
+        }
+
+        .item {
+            border-bottom: 1px solid #333;
+            padding: 1rem 0;
+        }
+
+        .item:last-child {
+            border-bottom: none;
+        }
+
+        .item-name {
+            color: var(--primary-color);
+            font-weight: bold;
+            font-size: 1.1rem;
+        }
+
+        .item-desc {
+            color: var(--text-muted);
+            font-size: 0.9rem;
+            margin-top: 0.25rem;
+        }
+
+        .loading {
+            text-align: center;
+            color: var(--text-muted);
+            font-style: italic;
         }
     </style>
 </head>
 <body>
+    <header>
+        <h1>OAPI DASHBOARD</h1>
+        <p style="color: var(--text-muted)">Modern API Foundation</p>
+    </header>
+
     <div class="container">
-        <h1>Welcome to your API Foundation</h1>
-        <p>This is a placeholder for your future frontend interface.</p>
-        <p>Check out the <a href="/swagger-ui">Swagger UI</a> to explore the API endpoints.</p>
+        <div class="card links">
+            <a href="/swagger-ui" target="_blank">📖 Swagger Docs</a>
+            <a href="/api/items" target="_blank">🔌 API JSON</a>
+        </div>
+
+        <div class="card">
+            <h2>System Items</h2>
+            <div id="loading" class="loading">Fetching data from API...</div>
+            <ul id="items-list"></ul>
+        </div>
     </div>
+
+    <script>
+        async function fetchItems() {
+            try {
+                const response = await fetch('/api/items');
+                const items = await response.json();
+                const listElement = document.getElementById('items-list');
+                const loadingElement = document.getElementById('loading');
+                
+                loadingElement.style.display = 'none';
+                
+                items.forEach(item => {
+                    const li = document.createElement('li');
+                    li.className = 'item';
+                    li.innerHTML = `
+                        <div class="item-name">${item.name}</div>
+                        <div class="item-desc">${item.description || 'No description available'}</div>
+                    `;
+                    listElement.appendChild(li);
+                });
+            } catch (error) {
+                console.error('Error fetching items:', error);
+                document.getElementById('loading').innerText = 'Failed to load items.';
+                document.getElementById('loading').style.color = 'var(--error-color)';
+            }
+        }
+
+        window.onload = fetchItems;
+    </script>
 </body>
 </html>
