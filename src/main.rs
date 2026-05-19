@@ -9,7 +9,6 @@ use std::net::SocketAddr;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
-use tracing_subscriber::{layer::SubscriberExt, util::SubscriberInitExt};
 
 #[derive(OpenApi)]
 #[openapi(
