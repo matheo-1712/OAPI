@@ -1,5 +1,5 @@
 use axum::{Json, http::StatusCode};
-use crate::models::{Item, CreateItem};
+use crate::models::{Item, CreateItem, ImageRequest, ImageResponse};
 use crate::services;
 use tracing::{info, debug};
 
@@ -51,4 +51,19 @@ pub async fn create_item(Json(payload): Json<CreateItem>) -> (StatusCode, Json<I
     };
     debug!("Item created with id: {}", item.id);
     (StatusCode::CREATED, Json(item))
+}
+
+/// Generate a mock image
+#[utoipa::path(
+    post,
+    path = "/api/images",
+    request_body = ImageRequest,
+    responses(
+        (status = 200, description = "Mock image generated successfully", body = ImageResponse)
+    )
+)]
+pub async fn create_image(Json(payload): Json<ImageRequest>) -> Json<ImageResponse> {
+    info!("Requesting image generation for: {}", payload.prompt);
+    let response = services::generate_image_mock(payload);
+    Json(response)
 }
