@@ -4,13 +4,6 @@ use std::fs;
 use std::path::Path;
 use image::{RgbImage, Rgb};
 
-/// Example of a logic-heavy service function
-pub fn process_item_logic(name: &str) -> String {
-    debug!("Executing complex logic for: {}", name);
-    // Imagine complex algorithms, data transformations, or external service calls here
-    format!("LOGIC_PROCESSED: {}", name.to_uppercase())
-}
-
 /// Service for generating an image locally
 pub fn generate_image_mock(req: ImageRequest) -> ImageResponse {
     debug!("Generating local image for prompt: {}", req.prompt);
@@ -26,7 +19,6 @@ pub fn generate_image_mock(req: ImageRequest) -> ImageResponse {
     let file_path = Path::new(output_dir).join(&file_name);
 
     // Create a simple colored image based on the prompt (Logic-heavy simulation)
-    // We use the prompt length and characters to decide the background color
     let r = (req.prompt.len() * 10) % 255;
     let g = (req.prompt.chars().map(|c| c as usize).sum::<usize>() % 255) as u8;
     let b = 150;
