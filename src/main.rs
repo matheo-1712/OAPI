@@ -3,7 +3,7 @@ mod models;
 mod services;
 
 use axum::{
-    routing::{get, post},
+    routing::post,
     Router,
 };
 use std::net::SocketAddr;
@@ -13,8 +13,8 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handlers::get_items, handlers::create_item, handlers::create_image),
-    components(schemas(models::Item, models::CreateItem, models::ImageRequest, models::ImageResponse))
+    paths(handlers::create_image),
+    components(schemas(models::ImageRequest, models::ImageResponse))
 )]
 struct ApiDoc;
 
@@ -44,7 +44,6 @@ async fn main() {
     // Build our application with routes
     let app = Router::new()
         // API routes
-        .route("/api/items", get(handlers::get_items).post(handlers::create_item))
         .route("/api/images", post(handlers::create_image))
         // Swagger UI
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
