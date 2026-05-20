@@ -1,5 +1,8 @@
-use tracing::debug;
+use tracing::{debug, error};
 use crate::models::{ImageRequest, ImageResponse};
+use std::fs;
+use std::path::Path;
+use image::{RgbImage, Rgb};
 
 /// Example of a logic-heavy service function
 pub fn process_item_logic(name: &str) -> String {
@@ -8,14 +11,48 @@ pub fn process_item_logic(name: &str) -> String {
     format!("LOGIC_PROCESSED: {}", name.to_uppercase())
 }
 
-/// Mock service for image generation logic
+/// Service for generating an image locally
 pub fn generate_image_mock(req: ImageRequest) -> ImageResponse {
-    debug!("Generating mock image for prompt: {}", req.prompt);
+    debug!("Generating local image for prompt: {}", req.prompt);
     
-    // In a real scenario, this would involve calling an AI model or image processing lib
-    ImageResponse {
-        id: format!("img_{}", uuid::Uuid::new_v4().simple()),
-        url: format!("https://picsum.photos/seed/{}/{}", req.prompt.len(), req.width),
-        status: "COMPLETED".to_string(),
+    // Ensure the output directory exists
+    let output_dir = "public/generated_images";
+    if let Err(e) = fs::create_dir_all(output_dir) {
+        error!("Failed to create directory: {}", e);
+    }
+
+    let file_id = uuid::Uuid::new_v4().to_string();
+    let file_name = format!("{}.png", file_id);
+    let file_path = Path::new(output_dir).join(&file_name);
+
+    // Create a simple colored image based on the prompt (Logic-heavy simulation)
+    // We use the prompt length and characters to decide the background color
+    let r = (req.prompt.len() * 10) % 255;
+    let g = (req.prompt.chars().map(|c| c as usize).sum::<usize>() % 255) as u8;
+    let b = 150;
+
+    let mut img = RgbImage::new(req.width, req.height);
+    for pixel in img.pixels_mut() {
+        *pixel = Rgb([r as u8, g, b]);
+    }
+
+    // Save the image
+    match img.save(&file_path) {
+        Ok(_) => {
+            debug!("Image saved successfully to {:?}", file_path);
+            ImageResponse {
+                id: file_id,
+                url: format!("/generated_images/{}", file_name),
+                status: "COMPLETED".to_string(),
+            }
+        },
+        Err(e) => {
+            error!("Failed to save image: {}", e);
+            ImageResponse {
+                id: file_id,
+                url: "".to_string(),
+                status: "FAILED".to_string(),
+            }
+        }
     }
 }
