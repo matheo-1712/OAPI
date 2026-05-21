@@ -14,7 +14,6 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
-        handlers::image_handler::create_image, 
         handlers::discord_handler::create_discord_summary_by_id
     ),
     components(schemas(

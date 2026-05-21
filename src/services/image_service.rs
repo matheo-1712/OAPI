@@ -1,11 +1,13 @@
 use tracing::debug;
-use crate::models::{ImageRequest, ImageResponse, DiscordUser};
-use crate::utils::{formatters, constants::*};
+use crate::models::{ImageResponse, DiscordUser};
+use crate::utils::{formatters, paths};
 use std::fs;
 use std::path::Path;
 use image::{RgbaImage, Rgba, imageops::FilterType};
 use rusttype::{Font, Scale};
 use std::collections::HashMap;
+use sha2::{Sha256, Digest};
+use crate::utils::constants::{LABEL_COMPANION, LABEL_MEMBER_SINCE, LABEL_MESSAGES, LABEL_ROLES_TITLE, LABEL_TEXT_CHANNEL, LABEL_VOCAL_TIME, LABEL_VOICE_CHANNEL};
 
 // --- Visual Configuration Constants ---
 const CARD_WIDTH: u32 = 1100;
@@ -23,21 +25,6 @@ const COLOR_SEPARATOR: [u8; 4] = [40, 41, 45, 255];
 
 const FONT_DATA: &[u8] = include_bytes!("../../public/font/ARIAL.TTF");
 
-const OUTPUT_DIR: &str = "public/generated_images";
-
-/// Service for generating an image locally and returning its metadata
-pub fn generate_image_mock(req: ImageRequest) -> ImageResponse {
-    debug!("Generating local image for prompt: {}", req.prompt);
-    let _ = fs::create_dir_all(OUTPUT_DIR);
-    let file_id = uuid::Uuid::new_v4().to_string();
-    let file_name = format!("{}.png", file_id);
-    let file_path = Path::new(OUTPUT_DIR).join(&file_name);
-    let mut img = RgbaImage::new(req.width, req.height);
-    for pixel in img.pixels_mut() { *pixel = Rgba(COLOR_SIDEBAR_BG); }
-    let _ = img.save(&file_path);
-    ImageResponse { url: format!("/generated_images/{}", file_name) }
-}
-
 /// Helper to parse hex color strings like "#2ecc71"
 fn parse_hex_color(hex: &str) -> Rgba<u8> {
     let hex = hex.trim_start_matches('#');
@@ -51,17 +38,53 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
     }
 }
 
-/// Service for generating a MASTERPIECE Discord profile image summary
-pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
-    debug!("Generating OVERHAULED profile image for user: {}", user.pseudo_discord);
+/// Generate a unique hash for the user state to handle caching
+fn calculate_user_hash(user: &DiscordUser) -> String {
+    let mut hasher = Sha256::new();
     
-    let _ = fs::create_dir_all(OUTPUT_DIR);
-    let file_id = uuid::Uuid::new_v4().to_string();
-    let file_name = format!("{}.png", file_id);
-    let file_path = Path::new(OUTPUT_DIR).join(&file_name);
+    // Core identity
+    hasher.update(user.pseudo_discord.as_bytes());
+    hasher.update(user.tag_discord.as_bytes());
+    if let Some(avatar) = &user.avatar_url { hasher.update(avatar.as_bytes()); }
+    
+    // Aggregated stats that affect the image
+    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
+    hasher.update(total_messages.to_be_bytes());
+    
+    let total_vocal_decimal: f64 = user.stats.iter()
+        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
+        .sum();
+    hasher.update(total_vocal_decimal.to_bits().to_be_bytes());
 
+    // Roles (affect color and pills)
+    for role in &user.roles {
+        hasher.update(role.name.as_bytes());
+        hasher.update(role.color.as_bytes());
+    }
+
+    format!("{:x}", hasher.finalize())
+}
+
+/// Service for generating a MASTERPIECE Discord profile image summary with hashing cache
+pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
+    let _ = fs::create_dir_all(paths::DISCORD_SUMMARY_DIR);
+    
+    // 1. Calculate unique hash for current user data state
+    let user_hash = calculate_user_hash(&user);
+    let file_name = format!("{}.png", user_hash);
+    let file_path = Path::new(paths::DISCORD_SUMMARY_DIR).join(&file_name);
+    let public_url = format!("/generated_images/discord_summary/{}", file_name);
+
+    // 2. Cache Check: If image with this hash exists, return it immediately
+    if file_path.exists() {
+        debug!("Cache hit: Image for user {} already exists at {}", user.pseudo_discord, user_hash);
+        return ImageResponse { url: public_url };
+    }
+
+    debug!("Cache miss: Generating new profile image for user: {}", user.pseudo_discord);
+
+    // 3. Generation (if not in cache)
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
-
     let bg_deep = Rgba(COLOR_BG_DEEP);
     let sidebar_bg = Rgba(COLOR_SIDEBAR_BG);
     let accent_blurple = Rgba(COLOR_ACCENT_BLURPLE);
@@ -70,14 +93,14 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
 
     for pixel in img.pixels_mut() { *pixel = bg_deep; }
 
-    // --- 1. SIDEBAR ---
+    // --- SIDEBAR ---
     for x in 0..SIDEBAR_WIDTH { for y in 0..CARD_HEIGHT { img.put_pixel(x as u32, y as u32, sidebar_bg); } }
     for y in 0..CARD_HEIGHT { img.put_pixel(SIDEBAR_WIDTH, y, Rgba(COLOR_SEPARATOR)); }
     for x in 0..SIDEBAR_WIDTH { for y in 0..6 { img.put_pixel(x, y, accent_blurple); } }
 
     let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
 
-    // --- 2. AVATAR ---
+    // --- AVATAR ---
     if let Some(avatar_url) = user.avatar_url {
         let client = reqwest::Client::new();
         if let Ok(resp) = client.get(avatar_url).send().await {
@@ -100,7 +123,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
         }
     }
 
-    // --- 3. IDENTITY ---
+    // --- IDENTITY ---
     let pseudo_truncated = formatters::truncate_text(&user.pseudo_discord, 15);
     draw_text_centered_rgba(&mut img, &font, &pseudo_truncated, 150, 280, Scale::uniform(38.0), white);
     draw_text_centered_rgba(&mut img, &font, &format!("{}", user.tag_discord), 150, 325, Scale::uniform(22.0), gray_label);
@@ -109,7 +132,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     draw_text_centered_rgba(&mut img, &font, LABEL_MEMBER_SINCE, 150, 380, Scale::uniform(14.0), gray_label);
     draw_text_centered_rgba(&mut img, &font, &formatted_join, 150, 405, Scale::uniform(18.0), white);
 
-    // --- 4. DATA ---
+    // --- DATA PROCESSING ---
     let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
     let total_vocal_decimal: f64 = user.stats.iter().map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0)).sum();
 
@@ -129,7 +152,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
         .filter(|r| r.name.to_lowercase().contains("loutre") || r.name.to_lowercase().contains("rôle"))
         .take(8).collect();
 
-    // --- 5. STATS GRID ---
+    // --- STATS GRID ---
     let grid_x = 350;
     let grid_y = 60;
     let card_w = 340;
@@ -141,7 +164,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     draw_stat_card(&mut img, grid_x + 370, grid_y + 150, card_w, card_h, LABEL_TEXT_CHANNEL, &formatters::truncate_text(&top_text, 20), &font);
     draw_stat_card(&mut img, grid_x, grid_y + 300, 710, card_h, LABEL_VOICE_CHANNEL, &formatters::truncate_text(&top_voice, 40), &font);
 
-    // --- 6. ROLES SECTION ---
+    // --- ROLES SECTION ---
     let roles_label_y = grid_y + 300 + card_h + 30; 
     draw_text_rgba(&mut img, &font, LABEL_ROLES_TITLE, grid_x as i32, roles_label_y as i32, Scale::uniform(18.0), gray_label);
     
@@ -155,7 +178,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     }
 
     let _ = img.save(&file_path);
-    ImageResponse { url: format!("/generated_images/{}", file_name) }
+    ImageResponse { url: public_url }
 }
 
 fn draw_stat_card(img: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, label: &str, val: &str, font: &Font) {
@@ -241,4 +264,58 @@ fn draw_text_centered_rgba(img: &mut RgbaImage, font: &Font, text: &str, center_
     let width = glyphs.iter().rev().filter_map(|g| g.pixel_bounding_box().map(|b| b.max.x)).next().unwrap_or(0);
     let start_x = center_x - (width / 2);
     draw_text_rgba(img, font, text, start_x, y, scale, color);
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::models::{DiscordUser, DiscordRole};
+
+    #[test]
+    fn test_parse_hex_color() {
+        assert_eq!(parse_hex_color("#FF0000"), Rgba([255, 0, 0, 255]));
+        assert_eq!(parse_hex_color("#00FF00"), Rgba([0, 255, 0, 255]));
+        assert_eq!(parse_hex_color("#0000FF"), Rgba([0, 0, 255, 255]));
+        // Default color for invalid hex
+        assert_eq!(parse_hex_color("invalid"), Rgba(COLOR_ACCENT_BLURPLE));
+    }
+
+    #[test]
+    fn test_calculate_user_hash() {
+        let user1 = DiscordUser {
+            id: 1,
+            discord_id: "123".to_string(),
+            pseudo_discord: "User1".to_string(),
+            tag_discord: "1234".to_string(),
+            avatar_url: Some("http://example.com/avatar.png".to_string()),
+            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
+            first_activity: None,
+            last_activity: None,
+            delete_date: None,
+            roles: vec![DiscordRole { id: "1".to_string(), name: "Admin".to_string(), color: "#FF0000".to_string() }],
+            stats: vec![],
+        };
+
+        let user2 = DiscordUser {
+            id: 1,
+            discord_id: "123".to_string(),
+            pseudo_discord: "User1".to_string(),
+            tag_discord: "1234".to_string(),
+            avatar_url: Some("http://example.com/avatar.png".to_string()),
+            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
+            first_activity: None,
+            last_activity: None,
+            delete_date: None,
+            roles: vec![DiscordRole { id: "1".to_string(), name: "Admin".to_string(), color: "#FF0000".to_string() }],
+            stats: vec![],
+        };
+
+        let user3 = DiscordUser {
+            pseudo_discord: "User2".to_string(),
+            ..user1.clone()
+        };
+
+        assert_eq!(calculate_user_hash(&user1), calculate_user_hash(&user2));
+        assert_ne!(calculate_user_hash(&user1), calculate_user_hash(&user3));
+    }
 }

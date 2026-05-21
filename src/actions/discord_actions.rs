@@ -23,7 +23,7 @@ pub async fn get_discord_summary_action(discord_id: &str) -> Result<ImageRespons
     // For now, we only return the image URL via the service.
     
     // 3. Orchestrate business logic
-    let response = services::generate_discord_profil(user).await;
+    let response = services::generate_discord_profile(user).await;
     
     Ok(response)
 }
