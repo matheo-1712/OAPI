@@ -94,8 +94,6 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     }
 
     debug!("Cache miss: Generating new profile image for user: {}", user.pseudo_discord);
-    
-    // ... rest of the implementation
 
     // 3. Generation (if not in cache)
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
