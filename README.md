@@ -1,48 +1,58 @@
-# OAPI - Otterly API Image Generator
+# OAPI - Otter API
 
-OAPI est une API Rust performante basée sur **Axum**, conçue pour automatiser la génération d'images de profil et de résumés de statistiques pour la communauté des Loutres.
+OAPI est une API Rust qui contient l'ensemble de la logique de l'Antre des loutres
 
 ## 🚀 Architecture du Projet
 
-Le projet suit une architecture modulaire et scalable, séparant strictement les responsabilités pour faciliter la maintenance et l'évolution.
+Le projet suit une architecture modulaire et scalable, séparant strictement les responsabilités :
 
-### 📂 Structure des Dossiers
-
-- **`src/models/`** : Définit les structures de données (DTOs). C'est le "langage" commun de l'application.
-- **`src/routes/`** : Définit le plan de l'API (URLs). C'est ici que l'on décide quels chemins sont exposés.
-- **`src/handlers/`** : Point d'entrée technique des requêtes. Il extrait les données HTTP et délègue le travail aux Actions.
-- **`src/actions/`** : **Le cœur de l'orchestration (Use Cases).** C'est ici que les données sont récupérées de l'extérieur et structurées avant traitement.
-- **`src/services/`** : Contient la logique métier pure et lourde (calculs, génération d'images).
-- **`src/main.rs`** : Initialisation du serveur, du logging et des middlewares.
-
----
-
-## 🛠 À quoi servent les "Actions" ?
-
-La couche **Actions** est un pont stratégique entre les Handlers et les Services. Ses rôles principaux sont :
-
-1.  **Orchestration** : Elle coordonne plusieurs services ou appels externes. Par exemple, l'Action Discord récupère d'abord les infos du joueur, puis ses stats, avant de demander au service d'image de générer le visuel.
-2.  **Filtrage & Sécurité** : Elle décide quelles données sont acceptables. Si une API externe renvoie 50 champs mais que nous n'en avons besoin que de 5, l'Action fait le tri.
-3.  **Indépendance technique** : L'Action ne sait pas qu'elle est appelée par du HTTP. On pourrait l'appeler depuis une commande terminal ou un bot Discord sans rien changer à sa logique.
+- **`src/config.rs`** : Gestion de la configuration hiérarchique (YAML).
+- **`src/models/`** : Structures de données (DTOs).
+- **`src/routes/`** : Routage de l'API.
+- **`src/handlers/`** : Extraction des données HTTP et délégation aux Actions.
+- **`src/actions/`** : Orchestration des cas d'usage (récupération de données externes, appels aux services).
+- **`src/services/`** : Logique métier pure (génération d'images, calculs).
+- **`src/utils/`** : Utilitaires (fetcher API générique, formateurs, constantes).
 
 ---
 
-## 📡 Endpoints Principaux
+## ⚙️ Configuration
 
-- `POST /api/images` : Génère une image de test à partir d'un prompt.
-- `POST /api/discord-summary/{discord_id}` : Récupère les données réelles via l'API Otterly et génère une image de synthèse complète du joueur.
+OAPI utilise un système de configuration flexible basé sur des fichiers YAML.
+
+1.  **`default_config.yaml`** : Contient les valeurs par défaut. **Ce fichier est suivi par Git** et ne doit pas être modifié pour des réglages personnels.
+2.  **`config.yaml`** : Utilisé pour vos surcharges locales (URL de test, ports spécifiques, etc.). **Ce fichier est ignoré par Git.**
+
+### Personnalisation
+Au premier lancement, un fichier `config.yaml` est généré automatiquement s'il n'existe pas. Pour modifier une configuration (ex: l'URL de l'API Otterly), ajoutez-la simplement dans ce fichier :
+
+```yaml
+api:
+  base_url: "http://votre-url-locale/api"
+```
+
+*Note : Si un champ est vide ou absent de `config.yaml`, la valeur de `default_config.yaml` est utilisée automatiquement.*
+
+---
+
+## 📡 Récupération de Données (Fetcher API)
+
+Le projet inclut un utilitaire robuste pour interagir avec des APIs externes (`src/utils/api_fetch.rs`) :
+
+- **Santé de l'API** : Un test de santé automatique (`Health Check`) est effectué sur la `base_url` avant chaque requête.
+- **Généricité** : Un fetcher générique permet de désérialiser n'importe quelle réponse API respectant le format standard `{ data: T }`.
+- **Logging** : Toutes les erreurs et réponses brutes sont logguées via `tracing` pour faciliter le debugging.
 
 ---
 
 ## 📖 Documentation API (Swagger)
 
-L'API est auto-documentée grâce à **Utoipa**.
-Une fois le serveur lancé, accédez à :
+L'API est auto-documentée. Une fois le serveur lancé, accédez à :
 👉 `http://localhost:3000/swagger-ui`
 
 ---
 
-## ⚙️ Installation et Lancement
+## 🛠 Installation et Lancement
 
 ### Prérequis
 - Rust (dernière version stable)
@@ -58,9 +68,9 @@ cargo check
 ```
 
 ## 🎨 Technologies utilisées
-- **Axum** : Framework web rapide et modulaire.
-- **Tokio** : Runtime asynchrone.
-- **Utoipa** : Génération automatique de Swagger/OpenAPI.
-- **Image** : Manipulation et génération d'images en natif Rust.
-- **Reqwest** : Client HTTP pour récupérer les données externes.
-- **Tracing** : Logging structuré pour le monitoring.
+- **Axum** : Framework web asynchrone.
+- **Config** : Gestion hiérarchique des configurations.
+- **Serde YAML** : Support du format YAML pour la config.
+- **Utoipa** : Documentation OpenAPI automatique.
+- **Image / RustType** : Génération d'images et rendu de texte.
+- **Reqwest** : Client HTTP asynchrone.

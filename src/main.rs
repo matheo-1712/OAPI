@@ -3,7 +3,8 @@ mod models;
 mod services;
 mod routes;
 mod actions;
-mod utils; // Added utils module
+mod utils;
+mod config;
 
 use axum::Router;
 use std::net::SocketAddr;
@@ -30,6 +31,9 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
+    // Initialize config
+    config::init();
+
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
