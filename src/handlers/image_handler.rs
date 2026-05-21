@@ -3,7 +3,7 @@ use crate::models::{ImageRequest, ImageResponse};
 use crate::services;
 use tracing::info;
 
-/// Generate a mock image
+/// Generate a mock image and return its URL
 #[utoipa::path(
     post,
     path = "/api/images",

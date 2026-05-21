@@ -15,3 +15,6 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "chrono", "local-time"] }
 uuid = { version = "1.0", features = ["v4"] }
 image = "0.25"
+rusttype = "0.9"
+reqwest = { version = "0.12", features = ["json"] }
+chrono = { version = "0.4", features = ["serde"] }

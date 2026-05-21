@@ -1,11 +1,11 @@
 mod handlers;
 mod models;
 mod services;
+mod routes;
+mod actions;
+mod utils; // Added utils module
 
-use axum::{
-    routing::post,
-    Router,
-};
+use axum::Router;
 use std::net::SocketAddr;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use utoipa::OpenApi;
@@ -13,20 +13,30 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handlers::create_image),
-    components(schemas(models::ImageRequest, models::ImageResponse))
+    paths(
+        handlers::image_handler::create_image, 
+        handlers::discord_handler::create_discord_summary_by_id
+    ),
+    components(schemas(
+        models::ImageRequest, 
+        models::ImageResponse, 
+        models::DiscordUser, 
+        models::DiscordRole,
+        models::DiscordStats,
+        models::DiscordChannel,
+        models::DiscordVoiceConnection
+    ))
 )]
 struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing with a simplified and compact format
+    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,OAPI=debug,tower_http=debug".into()),
         )
-        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
         .compact()
         .init();
 
@@ -41,18 +51,13 @@ async fn main() {
     "#;
     println!("{}", banner);
 
-    // Build our application with routes
+    // Build app
     let app = Router::new()
-        // API routes
-        .route("/api/images", post(handlers::create_image))
-        // Swagger UI
+        .nest("/api", routes::api_routes())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Serve static files from the "public" directory
         .fallback_service(ServeDir::new("public"))
-        // Add logging middleware
         .layer(TraceLayer::new_for_http());
 
-    // Run it with hyper
     let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
     
     tracing::info!("🚀 OAPI Server starting up...");
