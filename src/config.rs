@@ -14,28 +14,21 @@ use config::{Config as ConfigTrait, ConfigError, File, FileFormat};
 /// Global configuration structure.
 #[derive(Debug, Deserialize, Clone)]
 pub struct Config {
-    /// External API settings.
-    pub api: ApiConfig,
+    /// External API endpoints (full URLs).
+    pub external_apis: ExternalApis,
     /// Server settings including internal routes.
     pub server: ServerConfig,
 }
 
-/// Settings for external API interactions.
+/// Full URLs for external API interactions.
 #[derive(Debug, Deserialize, Clone)]
-pub struct ApiConfig {
-    /// The base URL for the external Otterly API.
-    pub base_url: String,
-    /// Paths for specific external API endpoints.
-    pub endpoints: ApiEndpoints,
-}
-
-/// Paths for specific external API endpoints.
-#[derive(Debug, Deserialize, Clone)]
-pub struct ApiEndpoints {
-    /// Path for fetching Discord user information.
+pub struct ExternalApis {
+    /// Full URL for fetching Discord user information.
     pub discord_user: String,
-    /// Path for fetching Discord user statistics.
+    /// Full URL for fetching Discord user statistics.
     pub discord_stats: String,
+    /// Optional health check URL (e.g., base API URL).
+    pub health_check: String,
 }
 
 /// Server settings and internal route paths.
@@ -109,11 +102,10 @@ pub fn init() {
 #     generate_image: "/images"
 #     discord_summary: "/discord-summary/:id"
 #
-# api:
-#   base_url: "https://votre-url-specifique.fr/api"
-#   endpoints:
-#     discord_user: "/utilisateurs_discord"
-#     discord_stats: "/utilisateurs_discord/stats"
+# external_apis:
+#   discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
+#   discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
+#   health_check: "https://otterlyapi.antredesloutres.fr/api"
 "#;
         fs::write(config_path, template).expect("Impossible de créer le fichier config.yaml");
     }

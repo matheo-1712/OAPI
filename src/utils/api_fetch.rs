@@ -5,7 +5,7 @@
 
 use serde::Deserialize;
 use tracing::{debug, error, warn};
-use crate::utils::api_endpoints::api_base_url;
+use crate::utils::api_endpoints::api_health_check_url;
 
 /// Standard API response wrapper used by external Otterly APIs.
 #[derive(Deserialize)]
@@ -14,22 +14,22 @@ pub struct ApiResponse<T> {
     pub data: T,
 }
 
-/// Checks if the external API base URL is responsive.
+/// Checks if the external API is responsive using a health check URL.
 /// 
 /// # Errors
 /// 
 /// Returns an error message if the API cannot be reached or returns a non-success status code.
 pub async fn check_api_health() -> Result<(), String> {
     let client = reqwest::Client::new();
-    let base_url = api_base_url();
-    let resp = client.get(base_url).send().await
+    let health_url = api_health_check_url();
+    let resp = client.get(health_url).send().await
         .map_err(|e| format!("API Health Check failed: {}", e))?;
 
     if !resp.status().is_success() {
         return Err(format!("API Health Check returned error {}", resp.status()));
     }
     
-    debug!("API Health Check successful for {}", base_url);
+    debug!("API Health Check successful for {}", health_url);
     Ok(())
 }
 

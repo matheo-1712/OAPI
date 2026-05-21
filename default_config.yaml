@@ -6,8 +6,7 @@ server:
     generate_image: "/images"
     discord_summary: "/discord-summary/:id"
 
-api:
-  base_url: "https://otterlyapi.antredesloutres.fr/api"
-  endpoints:
-    discord_user: "/utilisateurs_discord"
-    discord_stats: "/utilisateurs_discord/stats"
+external_apis:
+  discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
+  discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
+  health_check: "https://otterlyapi.antredesloutres.fr/api"

@@ -38,11 +38,11 @@ pub async fn get_discord_summary_action(discord_id: &str) -> Result<ImageRespons
 async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
     debug!("Action: Fetching external data for discord_id: {}", discord_id);
     
-    // Fetch user info
+    // Fetch user info (ID is appended to the configured full URL)
     let user_url = format!("{}/{}", discord_user_url(), discord_id);
     let mut user: DiscordUser = fetch_api_data(&user_url, "user info").await?;
         
-    // Fetch user stats
+    // Fetch user stats (ID is appended to the configured full URL)
     let stats_url = format!("{}/{}", discord_stats_url(), discord_id);
     user.stats = fetch_api_data(&stats_url, "stats").await?;
 
