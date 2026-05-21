@@ -111,3 +111,64 @@ pub fn init() {
     let config = Config::load().expect("Failed to load configuration");
     CONFIG.set(config).expect("Failed to set global configuration");
 }
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::fs;
+
+    #[test]
+    fn test_config_load_default() {
+        // Create a temporary default_config.yaml for testing
+        let test_default = r#"
+server:
+  host: "127.0.0.1"
+  port: 8080
+  routes:
+    base: "/api"
+    generate_image: "/img"
+    discord_summary: "/discord"
+external_apis:
+  discord_user: "http://user"
+  discord_stats: "http://stats"
+  health_check: "http://health"
+"#;
+        let default_path = "test_default_config.yaml";
+        fs::write(default_path, test_default).unwrap();
+
+        let s = ConfigTrait::builder()
+            .add_source(File::new(default_path, FileFormat::Yaml))
+            .build()
+            .unwrap();
+        
+        let config: Config = s.try_deserialize().unwrap();
+        
+        assert_eq!(config.server.port, 8080);
+        assert_eq!(config.external_apis.discord_user, "http://user");
+
+        fs::remove_file(default_path).unwrap();
+    }
+
+    #[test]
+    fn test_config_override() {
+        let test_default = "server:\n  port: 8080\n  host: \"127.0.0.1\"\n  routes:\n    base: \"/\"\n    generate_image: \"/\"\n    discord_summary: \"/\"\nexternal_apis:\n  discord_user: \"\"\n  discord_stats: \"\"\n  health_check: \"\"\n";
+        let test_override = "server:\n  port: 9090\n";
+        
+        fs::write("t_default.yaml", test_default).unwrap();
+        fs::write("t_override.yaml", test_override).unwrap();
+
+        let s = ConfigTrait::builder()
+            .add_source(File::new("t_default.yaml", FileFormat::Yaml))
+            .add_source(File::new("t_override.yaml", FileFormat::Yaml))
+            .build()
+            .unwrap();
+        
+        let config: Config = s.try_deserialize().unwrap();
+        
+        assert_eq!(config.server.port, 9090); // Overridden
+        assert_eq!(config.server.host, "127.0.0.1"); // Kept from default
+
+        fs::remove_file("t_default.yaml").unwrap();
+        fs::remove_file("t_override.yaml").unwrap();
+    }
+}
