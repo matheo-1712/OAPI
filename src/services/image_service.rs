@@ -34,174 +34,179 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
     }
 }
 
-/// Service for generating an ULTRA MODERN Discord profile image
+/// Service for generating a MODERN and CLEAN Discord profile image summary
 pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
-    debug!("Generating HIGH-END profile image for user: {}", user.pseudo_discord);
+    debug!("Generating MODERN profile image for user: {}", user.pseudo_discord);
     
     let output_dir = "public/generated_images";
     let _ = fs::create_dir_all(output_dir);
+
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{}.png", file_id);
     let file_path = Path::new(output_dir).join(&file_name);
 
-    // Canvas: 1000x600 for better spacing
-    let width = 1000;
-    let height = 600;
+    // Image Setup: 900x500 (Clean, Square Borders)
+    let width = 900;
+    let height = 500;
     let mut img = RgbaImage::new(width, height);
 
-    // --- 1. Background: Deep Gradient Look ---
-    let bg_color = Rgba([15, 15, 18, 255]);
-    for (x, y, pixel) in img.enumerate_pixels_mut() {
-        // Subtle vertical gradient
-        let val = (y as f32 / height as f32 * 10.0) as u8;
-        *pixel = Rgba([bg_color.0[0] + val, bg_color.0[1] + val, bg_color.0[2] + val, 255]);
+    // Background: Discord Dark Mode feel
+    let bg_color = Rgba([24, 25, 28, 255]);
+    for pixel in img.pixels_mut() { *pixel = bg_color; }
+
+    // Top Accent (Blurple)
+    for x in 0..width {
+        for y in 0..4 {
+            img.put_pixel(x, y, Rgba([88, 101, 242, 255]));
+        }
     }
 
-    // --- 2. Load Fonts ---
-    let font_bold = Font::try_from_bytes(include_bytes!("C:\\Windows\\Fonts\\arialbd.ttf") as &[u8]).expect("E1");
-    let font_reg = Font::try_from_bytes(include_bytes!("C:\\Windows\\Fonts\\arial.ttf") as &[u8]).expect("E2");
+    // Load fonts
+    let font_data_bold = include_bytes!("C:\\Windows\\Fonts\\arialbd.ttf");
+    let font_bold = Font::try_from_bytes(font_data_bold as &[u8]).expect("Error Bold Font");
+    let font_data_reg = include_bytes!("C:\\Windows\\Fonts\\arial.ttf");
+    let font_reg = Font::try_from_bytes(font_data_reg as &[u8]).expect("Error Font");
 
-    // --- 3. Data Processing ---
+    // --- LOGIQUE D'AGRÉGATION ---
     let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
-    let total_vocal_decimal: f64 = user.stats.iter().map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0)).sum();
     
+    let stats_vocal_sum: f64 = user.stats.iter()
+        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
+        .sum();
+    
+    let total_vocal_decimal = stats_vocal_sum; // As per user's earlier instruction to only use stats array
+
     let mut text_counts = HashMap::new();
     let mut voice_counts = HashMap::new();
     for stat in &user.stats {
         for ch in &stat.text_channels { *text_counts.entry(ch.name.clone()).or_insert(0) += 1; }
         for ch in &stat.voice_channels { *voice_counts.entry(ch.name.clone()).or_insert(0) += 1; }
     }
-    let top_text = formatters::truncate_text(&text_counts.into_iter().max_by_key(|&(_, c)| c).map(|(n, _)| n).unwrap_or("None".into()), 20);
-    let top_voice = formatters::truncate_text(&voice_counts.into_iter().max_by_key(|&(_, c)| c).map(|(n, _)| n).unwrap_or("None".into()), 20);
+    let top_text_channel = text_counts.into_iter().max_by_key(|&(_, count)| count).map(|(name, _)| name).unwrap_or_else(|| "Aucun".to_string());
+    let top_voice_channel = voice_counts.into_iter().max_by_key(|&(_, count)| count).map(|(name, _)| name).unwrap_or_else(|| "Aucun".to_string());
 
     let filtered_roles: Vec<_> = user.roles.iter()
         .filter(|r| r.name.to_lowercase().contains("loutre") || r.name.to_lowercase().contains("rôle"))
-        .take(4).collect();
+        .take(4)
+        .collect();
 
-    // --- 4. Main Glass Container ---
-    draw_rounded_rect(&mut img, 40, 40, 920, 520, 24, Rgba([30, 31, 34, 180])); // Glassmorphism container
-    
-    // Header Accent Line (Blurple)
-    for x in 64..936 { for y in 40..43 { img.put_pixel(x, y, Rgba([88, 101, 242, 255])); } }
-
-    // Colors
     let white = Rgba([255, 255, 255, 255]);
-    let gray = Rgba([150, 152, 157, 255]);
+    let gray = Rgba([185, 187, 190, 255]);
 
-    // --- 5. Avatar (Glowing border) ---
+    // --- RENDU ---
+
+    // 1. Avatar (Circular)
     if let Some(avatar_url) = user.avatar_url {
         let client = reqwest::Client::new();
         if let Ok(resp) = client.get(avatar_url).send().await {
             if let Ok(bytes) = resp.bytes().await {
                 if let Ok(avatar_img) = image::load_from_memory(&bytes) {
-                    let mut avatar = avatar_img.resize_exact(140, 140, FilterType::Lanczos3).to_rgba8();
-                    // Circle Mask
-                    for ax in 0..140 {
-                        for ay in 0..140 {
-                            let dist = ((ax as f32 - 70.0).powi(2) + (ay as f32 - 70.0).powi(2)).sqrt();
-                            if dist > 70.0 { avatar.get_pixel_mut(ax, ay).0[3] = 0; }
-                            else if dist > 68.0 { // Subtle white ring
-                                let a = avatar.get_pixel_mut(ax, ay);
-                                a.0[0] = 255; a.0[1] = 255; a.0[2] = 255;
+                    let mut avatar = avatar_img.resize_exact(160, 160, FilterType::Lanczos3).to_rgba8();
+                    let radius = 80.0;
+                    for ax in 0..160 {
+                        for ay in 0..160 {
+                            let dx = ax as f32 - 80.0;
+                            let dy = ay as f32 - 80.0;
+                            if dx*dx + dy*dy > radius*radius {
+                                avatar.get_pixel_mut(ax, ay).0[3] = 0;
                             }
                         }
                     }
-                    image::imageops::overlay(&mut img, &avatar, 80, 80);
+                    image::imageops::overlay(&mut img, &avatar, 50, 60);
                 }
             }
         }
     }
 
-    // --- 6. Identity Header ---
-    draw_text_rgba(&mut img, &font_bold, &user.pseudo_discord, 250, 90, Scale::uniform(55.0), white);
-    draw_text_rgba(&mut img, &font_reg, &format!("@{}", user.tag_discord), 250, 150, Scale::uniform(26.0), gray);
-    
-    let join_text = format!("Membre depuis le {}", formatters::format_discord_date(&user.join_date_discord));
-    draw_text_rgba(&mut img, &font_reg, &join_text, 250, 185, Scale::uniform(18.0), gray);
+    // 2. Identity
+    draw_text_rgba(&mut img, &font_bold, &user.pseudo_discord, 240, 80, Scale::uniform(50.0), white);
+    draw_text_rgba(&mut img, &font_reg, &format!("@{}", user.tag_discord), 240, 140, Scale::uniform(28.0), gray);
 
-    // --- 7. Stats Grid (3 Boxes) ---
-    let stats_y = 240;
-    draw_modern_stat(&mut img, 80, stats_y, "MESSAGES ENVOYÉS", &format!("{}", total_messages), &font_bold, &font_reg);
-    draw_modern_stat(&mut img, 375, stats_y, "TEMPS EN VOCAL", &formatters::format_vocal_time(total_vocal_decimal), &font_bold, &font_reg);
-    draw_modern_stat(&mut img, 670, stats_y, "SALON PRÉFÉRÉ (TXT)", &top_text, &font_bold, &font_reg);
+    // 3. Stats Section (Rounded Cards)
+    let formatted_vocal = formatters::format_vocal_time(total_vocal_decimal);
+    draw_stat_box(&mut img, 240, 200, "MESSAGES", &format!("{}", total_messages), &font_bold, &font_reg);
+    draw_stat_box(&mut img, 460, 200, "TEMPS VOCAL", &formatted_vocal, &font_bold, &font_reg);
+    draw_stat_box(&mut img, 680, 200, "RÔLES CLÉS", &format!("{}", filtered_roles.len()), &font_bold, &font_reg);
 
-    // Second Row Stats
-    draw_modern_stat(&mut img, 80, 360, "SALON PRÉFÉRÉ (VOC)", &top_voice, &font_bold, &font_reg);
-    draw_modern_stat(&mut img, 375, 360, "PROFIL ID", &format!("#{}", user.id), &font_bold, &font_reg);
+    // 4. Preferred Channels
+    draw_text_rgba(&mut img, &font_reg, "SALON TEXTUEL PRÉFÉRÉ", 240, 320, Scale::uniform(16.0), gray);
+    draw_text_rgba(&mut img, &font_bold, &formatters::truncate_text(&top_text_channel, 25), 240, 345, Scale::uniform(22.0), white);
+    draw_text_rgba(&mut img, &font_reg, "SALON VOCAL PRÉFÉRÉ", 580, 320, Scale::uniform(16.0), gray);
+    draw_text_rgba(&mut img, &font_bold, &formatters::truncate_text(&top_voice_channel, 25), 580, 345, Scale::uniform(22.0), white);
 
-    // --- 8. Roles Section (Bottom) ---
-    draw_text_rgba(&mut img, &font_bold, "RÔLES PRIORITAIRES", 80, 485, Scale::uniform(18.0), gray);
-    let mut rx = 80;
+    // 5. Dates
+    let formatted_join = formatters::format_discord_date(&user.join_date_discord);
+    draw_text_rgba(&mut img, &font_reg, "MEMBRE DEPUIS LE", 50, 260, Scale::uniform(16.0), gray);
+    draw_text_rgba(&mut img, &font_bold, &formatted_join, 50, 285, Scale::uniform(20.0), white);
+
+    // 6. Roles (Rounded Pills with actual colors)
+    let mut role_x = 50;
     for role in filtered_roles {
-        let color = parse_hex_color(&role.color);
-        let w = draw_pill_high_end(&mut img, rx, 515, &role.name, &font_reg, color);
-        rx += w + 15;
+        let role_color = parse_hex_color(&role.color);
+        let width = draw_role_pill_modern(&mut img, role_x, 400, &role.name, &font_reg, role_color);
+        role_x += width + 12;
     }
 
-    // Save
+    // Save final image
     let _ = img.save(&file_path);
-    ImageResponse { url: format!("/generated_images/{}", file_name) }
+
+    ImageResponse {
+        url: format!("/generated_images/{}", file_name),
+    }
 }
 
-fn draw_modern_stat(img: &mut RgbaImage, x: i32, y: i32, label: &str, val: &str, font_bold: &Font, font_reg: &Font) {
-    draw_rounded_rect(img, x, y, 250, 90, 12, Rgba([43, 45, 49, 255])); // Container
-    draw_text_rgba(img, font_reg, label, x + 20, y + 15, Scale::uniform(14.0), Rgba([185, 187, 190, 255]));
-    draw_text_rgba(img, font_bold, val, x + 20, y + 40, Scale::uniform(28.0), Rgba([255, 255, 255, 255]));
+fn draw_stat_box(img: &mut RgbaImage, x: i32, y: i32, label: &str, value: &str, font_bold: &Font, font_reg: &Font) {
+    let white = Rgba([255, 255, 255, 255]);
+    let gray = Rgba([185, 187, 190, 255]);
+    let card_bg = Rgba([35, 36, 40, 255]);
+    for bx in x..(x+200) {
+        for by in y..(y+100) {
+            if bx >= 0 && bx < img.width() as i32 && by >= 0 && by < img.height() as i32 {
+                img.put_pixel(bx as u32, by as u32, card_bg);
+            }
+        }
+    }
+    draw_text_rgba(img, font_reg, label, x + 20, y + 20, Scale::uniform(18.0), gray);
+    draw_text_rgba(img, font_bold, value, x + 20, y + 50, Scale::uniform(32.0), white);
 }
 
-fn draw_pill_high_end(img: &mut RgbaImage, x: i32, y: i32, text: &str, font: &Font, color: Rgba<u8>) -> i32 {
+fn draw_role_pill_modern(img: &mut RgbaImage, x: i32, y: i32, text: &str, font: &Font, color: Rgba<u8>) -> i32 {
+    let white = Rgba([255, 255, 255, 255]);
+    let inner_bg = Rgba([30, 31, 34, 255]);
     let text_len = text.len() as i32 * 11;
     let width = (text_len + 40).max(120);
-    let height = 34;
-    draw_rounded_rect_outline(img, x, y, width, height, 17, color, 2);
-    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), Rgba([255, 255, 255, 255]));
+    let height = 36;
+    let radius = 18.0;
+    let border_width = 2;
+
+    for bx in 0..width {
+        for by in 0..height {
+            let px = x + bx;
+            let py = y + by;
+            if px >= 0 && px < img.width() as i32 && py >= 0 && py < img.height() as i32 {
+                let mut is_inside = false;
+                if bx >= radius as i32 && bx < width - radius as i32 { is_inside = true; }
+                else {
+                    let cx = if bx < radius as i32 { radius } else { width as f32 - radius };
+                    let dy = by as f32 - radius;
+                    if (bx as f32 - cx).powi(2) + dy.powi(2) <= radius*radius { is_inside = true; }
+                }
+
+                if is_inside {
+                    let mut is_border = bx < border_width || bx >= width - border_width || by < border_width || by >= height - border_width;
+                    if !is_border && (bx < radius as i32 || bx >= width - radius as i32) {
+                         let cx = if bx < radius as i32 { radius } else { width as f32 - radius };
+                         let dist = ((bx as f32 - cx).powi(2) + (by as f32 - radius).powi(2)).sqrt();
+                         if dist > radius - border_width as f32 { is_border = true; }
+                    }
+                    if is_border { img.put_pixel(px as u32, py as u32, color); }
+                    else { img.put_pixel(px as u32, py as u32, inner_bg); }
+                }
+            }
+        }
+    }
+    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), white);
     width
-}
-
-fn draw_rounded_rect(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, r: i32, color: Rgba<u8>) {
-    for dx in 0..w {
-        for dy in 0..h {
-            let px = x + dx;
-            let py = y + dy;
-            if px < 0 || px >= img.width() as i32 || py < 0 || py >= img.height() as i32 { continue; }
-            let mut inside = true;
-            if dx < r && dy < r { if ((dx-r).pow(2) + (dy-r).pow(2)) as f32 > (r*r) as f32 { inside = false; } }
-            else if dx > w-r-1 && dy < r { if ((dx-(w-r-1)).pow(2) + (dy-r).pow(2)) as f32 > (r*r) as f32 { inside = false; } }
-            else if dx < r && dy > h-r-1 { if ((dx-r).pow(2) + (dy-(h-r-1)).pow(2)) as f32 > (r*r) as f32 { inside = false; } }
-            else if dx > w-r-1 && dy > h-r-1 { if ((dx-(w-r-1)).pow(2) + (dy-(h-r-1)).pow(2)) as f32 > (r*r) as f32 { inside = false; } }
-            
-            if inside {
-                let current = img.get_pixel(px as u32, py as u32);
-                let alpha = color.0[3] as f32 / 255.0;
-                let inv_alpha = 1.0 - alpha;
-                let nr = (current.0[0] as f32 * inv_alpha + color.0[0] as f32 * alpha) as u8;
-                let ng = (current.0[1] as f32 * inv_alpha + color.0[1] as f32 * alpha) as u8;
-                let nb = (current.0[2] as f32 * inv_alpha + color.0[2] as f32 * alpha) as u8;
-                img.put_pixel(px as u32, py as u32, Rgba([nr, ng, nb, 255]));
-            }
-        }
-    }
-}
-
-fn draw_rounded_rect_outline(img: &mut RgbaImage, x: i32, y: i32, w: i32, h: i32, r: i32, color: Rgba<u8>, border: i32) {
-    for dx in 0..w {
-        for dy in 0..h {
-            let px = x + dx; let py = y + dy;
-            if px < 0 || px >= img.width() as i32 || py < 0 || py >= img.height() as i32 { continue; }
-            let dist_to_edge = |cx: i32, cy: i32| -> f32 { (((dx-cx).pow(2) + (dy-cy).pow(2)) as f32).sqrt() };
-            let mut inside = false;
-            let mut on_border = false;
-            if dx >= r && dx < w-r { if dy < border || dy >= h-border { on_border = true; } inside = true; }
-            else if dy >= r && dy < h-r { if dx < border || dx >= w-border { on_border = true; } inside = true; }
-            else {
-                let (cx, cy) = if dx < r && dy < r { (r, r) } else if dx >= w-r && dy < r { (w-r-1, r) } else if dx < r && dy >= h-r { (r, h-r-1) } else { (w-r-1, h-r-1) };
-                let d = dist_to_edge(cx, cy);
-                if d <= r as f32 { inside = true; if d > (r-border) as f32 { on_border = true; } }
-            }
-            if on_border { img.put_pixel(px as u32, py as u32, color); }
-            else if inside { img.put_pixel(px as u32, py as u32, Rgba([30, 31, 34, 255])); }
-        }
-    }
 }
 
 fn draw_text_rgba(img: &mut RgbaImage, font: &Font, text: &str, x: i32, y: i32, scale: Scale, color: Rgba<u8>) {
@@ -210,11 +215,13 @@ fn draw_text_rgba(img: &mut RgbaImage, font: &Font, text: &str, x: i32, y: i32, 
     for glyph in font.layout(text, scale, offset) {
         if let Some(bb) = glyph.pixel_bounding_box() {
             glyph.draw(|gx, gy, gv| {
-                let px = bb.min.x + gx as i32; let py = bb.min.y + gy as i32;
+                let px = bb.min.x + gx as i32;
+                let py = bb.min.y + gy as i32;
                 if px >= 0 && px < img.width() as i32 && py >= 0 && py < img.height() as i32 {
                     let pixel = img.get_pixel_mut(px as u32, py as u32);
                     if gv > 0.01 {
-                        let alpha = gv; let inv_alpha = 1.0 - alpha;
+                        let alpha = gv;
+                        let inv_alpha = 1.0 - alpha;
                         pixel.0[0] = (pixel.0[0] as f32 * inv_alpha + color.0[0] as f32 * alpha) as u8;
                         pixel.0[1] = (pixel.0[1] as f32 * inv_alpha + color.0[1] as f32 * alpha) as u8;
                         pixel.0[2] = (pixel.0[2] as f32 * inv_alpha + color.0[2] as f32 * alpha) as u8;
