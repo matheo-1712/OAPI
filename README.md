@@ -27,11 +27,9 @@ OAPI utilise un système de configuration flexible basé sur des fichiers YAML.
 Au premier lancement, un fichier `config.yaml` est généré automatiquement s'il n'existe pas. Pour modifier une configuration (ex: l'URL de l'API Otterly), ajoutez-la simplement dans ce fichier :
 
 ```yaml
-api:
-  base_url: "http://votre-url-locale/api"
-  endpoints:
-    discord_user: "/utilisateurs_discord"
-    discord_stats: "/utilisateurs_discord/stats"
+external_apis:
+  discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
+  discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
 ```
 
 *Note : Si un champ est vide ou absent de `config.yaml`, la valeur de `default_config.yaml` est utilisée automatiquement.*
@@ -42,7 +40,7 @@ api:
 
 Le projet inclut un utilitaire robuste pour interagir avec des APIs externes (`src/utils/api_fetch.rs`) :
 
-- **Santé de l'API** : Un test de santé automatique (`Health Check`) est effectué sur la `base_url` avant chaque requête.
+- **Santé de l'API** : Un test de santé automatique (`Health Check`) est effectué sur l'URL de santé configurée avant chaque requête.
 - **Généricité** : Un fetcher générique permet de désérialiser n'importe quelle réponse API respectant le format standard `{ data: T }`.
 - **Logging** : Toutes les erreurs et réponses brutes sont logguées via `tracing` pour faciliter le debugging.
 
@@ -55,6 +53,7 @@ Pour plus de détails sur le fonctionnement interne, consultez les guides suivan
 - [**Architecture**](./docs/architecture.md) : Comprendre les couches et le flux de données.
 - [**Système de Configuration**](./docs/configuration.md) : Maîtriser les surcharges YAML et ENV.
 - [**Génération d'Images**](./docs/generation_images.md) : Détails sur le moteur graphique et le cache.
+- [**API Fetcher**](./docs/api_fetcher.md) : Utilisation du client HTTP générique.
 - [**Ajouter une API Externe**](./docs/ajouter_api_externe.md) : Guide pas à pas pour l'extension.
 
 ---
