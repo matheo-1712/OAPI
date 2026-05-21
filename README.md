@@ -29,6 +29,9 @@ Au premier lancement, un fichier `config.yaml` est généré automatiquement s'i
 ```yaml
 api:
   base_url: "http://votre-url-locale/api"
+  endpoints:
+    discord_user: "/utilisateurs_discord"
+    discord_stats: "/utilisateurs_discord/stats"
 ```
 
 *Note : Si un champ est vide ou absent de `config.yaml`, la valeur de `default_config.yaml` est utilisée automatiquement.*

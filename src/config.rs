@@ -23,6 +23,17 @@ pub struct Config {
 pub struct ApiConfig {
     /// The base URL for the external Otterly API.
     pub base_url: String,
+    /// Paths for specific API endpoints.
+    pub endpoints: ApiEndpoints,
+}
+
+/// Paths for specific API endpoints.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ApiEndpoints {
+    /// Path for fetching Discord user information.
+    pub discord_user: String,
+    /// Path for fetching Discord user statistics.
+    pub discord_stats: String,
 }
 
 /// Static storage for the global configuration to ensure it's loaded only once.
@@ -65,7 +76,13 @@ pub fn init() {
     // Ensure config.yaml exists so it can be edited by the user
     let config_path = Path::new("config.yaml");
     if !config_path.exists() {
-        let template = "# Surcharges locales de configuration\n# api:\n#   base_url: \"https://votre-url-specifique.fr/api\"\n";
+        let template = r#"# Surcharges locales de configuration
+# api:
+#   base_url: "https://votre-url-specifique.fr/api"
+#   endpoints:
+#     discord_user: "/utilisateurs_discord"
+#     discord_stats: "/utilisateurs_discord/stats"
+"#;
         fs::write(config_path, template).expect("Impossible de créer le fichier config.yaml");
     }
 

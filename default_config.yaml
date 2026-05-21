@@ -1,2 +1,5 @@
 api:
   base_url: "https://otterlyapi.antredesloutres.fr/api"
+  endpoints:
+    discord_user: "/utilisateurs_discord"
+    discord_stats: "/utilisateurs_discord/stats"

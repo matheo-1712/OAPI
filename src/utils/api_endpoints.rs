@@ -16,10 +16,10 @@ pub fn api_base_url() -> &'static str {
 
 /// Constructs the full URL for fetching a Discord user's information.
 pub fn discord_user_url() -> String {
-    format!("{}/utilisateurs_discord", api_base_url())
+    format!("{}{}", api_base_url(), Config::global().api.endpoints.discord_user)
 }
 
 /// Constructs the full URL for fetching a Discord user's statistics.
 pub fn discord_stats_url() -> String {
-    format!("{}/utilisateurs_discord/stats", api_base_url())
+    format!("{}{}", api_base_url(), Config::global().api.endpoints.discord_stats)
 }
