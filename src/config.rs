@@ -3,7 +3,6 @@
 //! This module handles the loading and merging of configuration from multiple sources:
 //! 1. `default_config.yaml` (Base defaults)
 //! 2. `config.yaml` (Local overrides, ignored by Git)
-//! 3. Environment variables prefixed with `OAPI_`
 
 use serde::{Deserialize, Serialize};
 use std::sync::OnceLock;
@@ -66,8 +65,6 @@ impl Config {
             .add_source(File::new("default_config.yaml", FileFormat::Yaml))
             // Layer on the local configuration (Optional)
             .add_source(File::new("config.yaml", FileFormat::Yaml).required(false))
-            // Layer on environment variables (Optional, e.g., OAPI_SERVER__PORT)
-            .add_source(config::Environment::with_prefix("OAPI").separator("__"))
             .build()?;
 
         s.try_deserialize()

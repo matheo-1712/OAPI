@@ -1,6 +1,6 @@
 # Guide : Système de Configuration
 
-Le projet OAPI utilise un système de configuration hiérarchique et flexible basé sur la crate `config`. Ce système permet de gérer des valeurs par défaut tout en autorisant des surcharges locales et par variables d'environnement.
+Le projet OAPI utilise un système de configuration hiérarchique et flexible basé sur la crate `config`. Ce système permet de gérer des valeurs par défaut tout en autorisant des surcharges locales.
 
 ---
 
@@ -10,7 +10,6 @@ Les sources de configuration sont chargées dans l'ordre suivant (les dernières
 
 1.  **`default_config.yaml`** : Valeurs par défaut du projet. **Ce fichier est suivi par Git.**
 2.  **`config.yaml`** : Surcharges locales spécifiques à l'environnement. **Ce fichier est ignoré par Git.**
-3.  **Variables d'environnement** : Surcharges dynamiques via le système (ex: Docker).
 
 ---
 
@@ -33,14 +32,6 @@ Ouvrez `config.yaml` et décommentez la section et le champ souhaités.
 server:
   port: 4000
 ```
-
-## 3. Variables d'Environnement
-
-Toutes les configurations peuvent être surchargées via des variables d'environnement avec le préfixe `OAPI_` et le séparateur `__` (double underscore).
-
-**Exemples :**
-- `OAPI_SERVER__PORT=5000`
-- `OAPI_EXTERNAL_APIS__DISCORD_USER="https://mon-api-de-test.com/user"`
 
 ---
 
