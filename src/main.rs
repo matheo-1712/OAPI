@@ -91,11 +91,7 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
     for (path, item) in openapi.paths.paths.iter() {
         let new_path = if path.contains("discord-summary") {
             // Convert Axum :param to OpenAPI {param}
-            let dynamic_path = config
-                .server
-                .routes
-                .discord_summary
-                .replace(":", "{");
+            let dynamic_path = config.server.routes.discord_summary.replace(":", "{");
 
             // If the parameter in YAML doesn't end with }, add it
             let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {

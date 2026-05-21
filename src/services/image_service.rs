@@ -366,13 +366,7 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     ImageResponse { url: public_url }
 }
 
-fn draw_stat_card(
-    img: &mut RgbaImage,
-    rect: Rect,
-    label: &str,
-    val: &str,
-    font: &Font,
-) {
+fn draw_stat_card(img: &mut RgbaImage, rect: Rect, label: &str, val: &str, font: &Font) {
     let card_bg = Rgba(COLOR_CARD_BG);
     let gray_label = Rgba(COLOR_GRAY_LABEL);
     let white = Rgba(COLOR_WHITE);
