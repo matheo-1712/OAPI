@@ -34,81 +34,51 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
     }
 }
 
-/// Service for generating a MODERN and CLEAN Discord profile image summary
+/// Service for generating a MASTERPIECE Discord profile image summary
 pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
-    debug!("Generating MODERN profile image for user: {}", user.pseudo_discord);
+    debug!("Generating OVERHAULED profile image for user: {}", user.pseudo_discord);
     
     let output_dir = "public/generated_images";
     let _ = fs::create_dir_all(output_dir);
-
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{}.png", file_id);
     let file_path = Path::new(output_dir).join(&file_name);
 
-    // Image Setup: 900x500 (Clean, Square Borders)
-    let width = 900;
-    let height = 500;
+    let width = 1100;
+    let height = 650;
     let mut img = RgbaImage::new(width, height);
 
-    // Background: Discord Dark Mode feel
-    let bg_color = Rgba([24, 25, 28, 255]);
-    for pixel in img.pixels_mut() { *pixel = bg_color; }
-
-    // Top Accent (Blurple)
-    for x in 0..width {
-        for y in 0..4 {
-            img.put_pixel(x, y, Rgba([88, 101, 242, 255]));
-        }
-    }
-
-    // Load fonts
-    let font_data_bold = include_bytes!("C:\\Windows\\Fonts\\arialbd.ttf");
-    let font_bold = Font::try_from_bytes(font_data_bold as &[u8]).expect("Error Bold Font");
-    let font_data_reg = include_bytes!("C:\\Windows\\Fonts\\arial.ttf");
-    let font_reg = Font::try_from_bytes(font_data_reg as &[u8]).expect("Error Font");
-
-    // --- LOGIQUE D'AGRÉGATION ---
-    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
-    
-    let stats_vocal_sum: f64 = user.stats.iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
-        .sum();
-    
-    let total_vocal_decimal = stats_vocal_sum; // As per user's earlier instruction to only use stats array
-
-    let mut text_counts = HashMap::new();
-    let mut voice_counts = HashMap::new();
-    for stat in &user.stats {
-        for ch in &stat.text_channels { *text_counts.entry(ch.name.clone()).or_insert(0) += 1; }
-        for ch in &stat.voice_channels { *voice_counts.entry(ch.name.clone()).or_insert(0) += 1; }
-    }
-    let top_text_channel = text_counts.into_iter().max_by_key(|&(_, count)| count).map(|(name, _)| name).unwrap_or_else(|| "Aucun".to_string());
-    let top_voice_channel = voice_counts.into_iter().max_by_key(|&(_, count)| count).map(|(name, _)| name).unwrap_or_else(|| "Aucun".to_string());
-
-    let filtered_roles: Vec<_> = user.roles.iter()
-        .filter(|r| r.name.to_lowercase().contains("loutre") || r.name.to_lowercase().contains("rôle"))
-        .take(4)
-        .collect();
-
+    let bg_deep = Rgba([15, 15, 18, 255]);
+    let sidebar_bg = Rgba([30, 31, 34, 255]);
+    let accent_blurple = Rgba([88, 101, 242, 255]);
     let white = Rgba([255, 255, 255, 255]);
-    let gray = Rgba([185, 187, 190, 255]);
+    let gray_label = Rgba([150, 152, 157, 255]);
 
-    // --- RENDU ---
+    for pixel in img.pixels_mut() { *pixel = bg_deep; }
 
-    // 1. Avatar (Circular)
+    // --- 1. SIDEBAR ---
+    for x in 0..300 { for y in 0..height { img.put_pixel(x as u32, y as u32, sidebar_bg); } }
+    for y in 0..height { img.put_pixel(300, y, Rgba([40, 41, 45, 255])); }
+    for x in 0..300 { for y in 0..6 { img.put_pixel(x, y, accent_blurple); } }
+
+    // Use local font file
+    let font_data = include_bytes!("../../public/font/ARIAL.TTF");
+    let font = Font::try_from_bytes(font_data as &[u8]).expect("Error loading bundled ARIAL.TTF");
+
+    // --- 2. AVATAR ---
     if let Some(avatar_url) = user.avatar_url {
         let client = reqwest::Client::new();
         if let Ok(resp) = client.get(avatar_url).send().await {
             if let Ok(bytes) = resp.bytes().await {
                 if let Ok(avatar_img) = image::load_from_memory(&bytes) {
-                    let mut avatar = avatar_img.resize_exact(160, 160, FilterType::Lanczos3).to_rgba8();
-                    let radius = 80.0;
-                    for ax in 0..160 {
-                        for ay in 0..160 {
-                            let dx = ax as f32 - 80.0;
-                            let dy = ay as f32 - 80.0;
-                            if dx*dx + dy*dy > radius*radius {
-                                avatar.get_pixel_mut(ax, ay).0[3] = 0;
+                    let mut avatar = avatar_img.resize_exact(200, 200, FilterType::Lanczos3).to_rgba8();
+                    for ax in 0..200 {
+                        for ay in 0..200 {
+                            let dist = ((ax as f32 - 100.0).powi(2) + (ay as f32 - 100.0).powi(2)).sqrt();
+                            if dist > 100.0 { avatar.get_pixel_mut(ax, ay).0[3] = 0; }
+                            else if dist > 96.0 {
+                                let p = avatar.get_pixel_mut(ax, ay);
+                                p.0[0] = 255; p.0[1] = 255; p.0[2] = 255; p.0[3] = 255;
                             }
                         }
                     }
@@ -118,94 +88,117 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
         }
     }
 
-    // 2. Identity
-    draw_text_rgba(&mut img, &font_bold, &user.pseudo_discord, 240, 80, Scale::uniform(50.0), white);
-    draw_text_rgba(&mut img, &font_reg, &format!("@{}", user.tag_discord), 240, 140, Scale::uniform(28.0), gray);
-
-    // 3. Stats Section (Rounded Cards)
-    let formatted_vocal = formatters::format_vocal_time(total_vocal_decimal);
-    draw_stat_box(&mut img, 240, 200, "MESSAGES", &format!("{}", total_messages), &font_bold, &font_reg);
-    draw_stat_box(&mut img, 460, 200, "TEMPS VOCAL", &formatted_vocal, &font_bold, &font_reg);
-    draw_stat_box(&mut img, 680, 200, "RÔLES CLÉS", &format!("{}", filtered_roles.len()), &font_bold, &font_reg);
-
-    // 4. Preferred Channels
-    draw_text_rgba(&mut img, &font_reg, "SALON TEXTUEL PRÉFÉRÉ", 240, 320, Scale::uniform(16.0), gray);
-    draw_text_rgba(&mut img, &font_bold, &formatters::truncate_text(&top_text_channel, 25), 240, 345, Scale::uniform(22.0), white);
-    draw_text_rgba(&mut img, &font_reg, "SALON VOCAL PRÉFÉRÉ", 580, 320, Scale::uniform(16.0), gray);
-    draw_text_rgba(&mut img, &font_bold, &formatters::truncate_text(&top_voice_channel, 25), 580, 345, Scale::uniform(22.0), white);
-
-    // 5. Dates
+    // --- 3. IDENTITY ---
+    let pseudo_truncated = formatters::truncate_text(&user.pseudo_discord, 15);
+    draw_text_centered_rgba(&mut img, &font, &pseudo_truncated, 150, 280, Scale::uniform(38.0), white);
+    draw_text_centered_rgba(&mut img, &font, &format!("@{}", user.tag_discord), 150, 325, Scale::uniform(22.0), gray_label);
+    
     let formatted_join = formatters::format_discord_date(&user.join_date_discord);
-    draw_text_rgba(&mut img, &font_reg, "MEMBRE DEPUIS LE", 50, 260, Scale::uniform(16.0), gray);
-    draw_text_rgba(&mut img, &font_bold, &formatted_join, 50, 285, Scale::uniform(20.0), white);
+    draw_text_centered_rgba(&mut img, &font, "MEMBRE DEPUIS LE", 150, 380, Scale::uniform(14.0), gray_label);
+    draw_text_centered_rgba(&mut img, &font, &formatted_join, 150, 405, Scale::uniform(18.0), white);
 
-    // 6. Roles (Rounded Pills with actual colors)
-    let mut role_x = 50;
+    // --- 4. DATA ---
+    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
+    let total_vocal_decimal: f64 = user.stats.iter().map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0)).sum();
+
+    let mut text_counts = HashMap::new();
+    let mut voice_counts = HashMap::new();
+    let mut companion_counts = HashMap::new();
+    for stat in &user.stats {
+        for ch in &stat.text_channels { *text_counts.entry(ch.name.clone()).or_insert(0) += 1; }
+        for ch in &stat.voice_channels { *voice_counts.entry(ch.name.clone()).or_insert(0) += 1; }
+        for comp in &stat.vocal_with { *companion_counts.entry(comp.username.clone()).or_insert(0) += 1; }
+    }
+    let top_text = text_counts.into_iter().max_by_key(|&(_, c)| c).map(|(n, _)| n).unwrap_or_else(|| "Aucun".to_string());
+    let top_voice = voice_counts.into_iter().max_by_key(|&(_, c)| c).map(|(n, _)| n).unwrap_or_else(|| "Aucun".to_string());
+    let top_companion = companion_counts.into_iter().max_by_key(|&(_, c)| c).map(|(n, _)| n).unwrap_or_else(|| "Aucun".to_string());
+
+    let filtered_roles: Vec<_> = user.roles.iter()
+        .filter(|r| r.name.to_lowercase().contains("loutre") || r.name.to_lowercase().contains("rôle"))
+        .take(8).collect();
+
+    // --- 5. STATS GRID ---
+    let grid_x = 350;
+    let grid_y = 60;
+    let card_w = 340;
+    let card_h = 120;
+
+    draw_stat_card(&mut img, grid_x, grid_y, card_w, card_h, "MESSAGES ENVOYÉS", &format!("{}", total_messages), &font);
+    draw_stat_card(&mut img, grid_x + 370, grid_y, card_w, card_h, "TEMPS VOCAL TOTAL", &formatters::format_vocal_time(total_vocal_decimal), &font);
+    draw_stat_card(&mut img, grid_x, grid_y + 150, card_w, card_h, "TOP COMPAGNON", &formatters::truncate_text(&top_companion, 20), &font);
+    draw_stat_card(&mut img, grid_x + 370, grid_y + 150, card_w, card_h, "SALON TEXTUEL", &formatters::truncate_text(&top_text, 20), &font);
+    draw_stat_card(&mut img, grid_x, grid_y + 300, 710, card_h, "SALON VOCAL PRÉFÉRÉ", &formatters::truncate_text(&top_voice, 40), &font);
+
+    // --- 6. ROLES SECTION ---
+    let roles_label_y = grid_y + 300 + card_h + 30; // 30px gap like between blocks
+    draw_text_rgba(&mut img, &font, "RÔLES PRIORITAIRES", grid_x as i32, roles_label_y as i32, Scale::uniform(18.0), gray_label);
+    
+    let mut rx = grid_x as i32;
+    let mut ry = roles_label_y as i32 + 35;
     for role in filtered_roles {
-        let role_color = parse_hex_color(&role.color);
-        let width = draw_role_pill_modern(&mut img, role_x, 400, &role.name, &font_reg, role_color);
-        role_x += width + 12;
+        let color = parse_hex_color(&role.color);
+        let w = draw_pill_high_fidelity(&mut img, rx, ry, &role.name, &font, color);
+        rx += w + 12;
+        if rx > width as i32 - 150 { rx = grid_x as i32; ry += 45; }
     }
 
-    // Save final image
     let _ = img.save(&file_path);
-
-    ImageResponse {
-        url: format!("/generated_images/{}", file_name),
-    }
+    ImageResponse { url: format!("/generated_images/{}", file_name) }
 }
 
-fn draw_stat_box(img: &mut RgbaImage, x: i32, y: i32, label: &str, value: &str, font_bold: &Font, font_reg: &Font) {
+fn draw_stat_card(img: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, label: &str, val: &str, font: &Font) {
+    let card_bg = Rgba([30, 31, 34, 255]);
+    let gray_label = Rgba([150, 152, 157, 255]);
     let white = Rgba([255, 255, 255, 255]);
-    let gray = Rgba([185, 187, 190, 255]);
-    let card_bg = Rgba([35, 36, 40, 255]);
-    for bx in x..(x+200) {
-        for by in y..(y+100) {
-            if bx >= 0 && bx < img.width() as i32 && by >= 0 && by < img.height() as i32 {
-                img.put_pixel(bx as u32, by as u32, card_bg);
-            }
-        }
-    }
-    draw_text_rgba(img, font_reg, label, x + 20, y + 20, Scale::uniform(18.0), gray);
-    draw_text_rgba(img, font_bold, value, x + 20, y + 50, Scale::uniform(32.0), white);
+    for bx in x..(x + w) { for by in y..(y + h) { if bx < img.width() && by < img.height() { img.put_pixel(bx, by, card_bg); } } }
+    for bx in x..(x + w) { img.put_pixel(bx, y + h - 1, Rgba([88, 101, 242, 100])); }
+    draw_text_rgba(img, font, label, (x + 25) as i32, (y + 25) as i32, Scale::uniform(15.0), gray_label);
+    draw_text_rgba(img, font, val, (x + 25) as i32, (y + 55) as i32, Scale::uniform(36.0), white);
 }
 
-fn draw_role_pill_modern(img: &mut RgbaImage, x: i32, y: i32, text: &str, font: &Font, color: Rgba<u8>) -> i32 {
-    let white = Rgba([255, 255, 255, 255]);
+fn draw_pill_high_fidelity(img: &mut RgbaImage, x: i32, y: i32, text: &str, font: &Font, color: Rgba<u8>) -> i32 {
     let inner_bg = Rgba([30, 31, 34, 255]);
-    let text_len = text.len() as i32 * 11;
+    let text_len = text.chars().count() as i32 * 11;
     let width = (text_len + 40).max(120);
-    let height = 36;
-    let radius = 18.0;
-    let border_width = 2;
+    let height = 34;
+    let radius = 17.0;
+    let border_width = 2.0;
 
-    for bx in 0..width {
-        for by in 0..height {
-            let px = x + bx;
-            let py = y + by;
-            if px >= 0 && px < img.width() as i32 && py >= 0 && py < img.height() as i32 {
-                let mut is_inside = false;
-                if bx >= radius as i32 && bx < width - radius as i32 { is_inside = true; }
-                else {
-                    let cx = if bx < radius as i32 { radius } else { width as f32 - radius };
-                    let dy = by as f32 - radius;
-                    if (bx as f32 - cx).powi(2) + dy.powi(2) <= radius*radius { is_inside = true; }
+    for dx in 0..width {
+        for dy in 0..height {
+            let px = x + dx; let py = y + dy;
+            if px < 0 || px >= img.width() as i32 || py < 0 || py >= img.height() as i32 { continue; }
+            let cx = if dx < radius as i32 { radius } else if dx >= width - radius as i32 { width as f32 - radius } else { dx as f32 };
+            let cy = radius;
+            let dist = ((dx as f32 - cx).powi(2) + (dy as f32 - cy).powi(2)).sqrt();
+
+            if dist <= radius {
+                let current_pixel = img.get_pixel(px as u32, py as u32);
+                let mut target_color = inner_bg;
+                if dist > radius - border_width {
+                    let alpha = (radius - dist).clamp(0.0, 1.0);
+                    let inv_alpha = 1.0 - alpha;
+                    target_color = Rgba([
+                        (color.0[0] as f32 * alpha + inner_bg.0[0] as f32 * inv_alpha) as u8,
+                        (color.0[1] as f32 * alpha + inner_bg.0[1] as f32 * inv_alpha) as u8,
+                        (color.0[2] as f32 * alpha + inner_bg.0[2] as f32 * inv_alpha) as u8,
+                        255
+                    ]);
                 }
-
-                if is_inside {
-                    let mut is_border = bx < border_width || bx >= width - border_width || by < border_width || by >= height - border_width;
-                    if !is_border && (bx < radius as i32 || bx >= width - radius as i32) {
-                         let cx = if bx < radius as i32 { radius } else { width as f32 - radius };
-                         let dist = ((bx as f32 - cx).powi(2) + (by as f32 - radius).powi(2)).sqrt();
-                         if dist > radius - border_width as f32 { is_border = true; }
-                    }
-                    if is_border { img.put_pixel(px as u32, py as u32, color); }
-                    else { img.put_pixel(px as u32, py as u32, inner_bg); }
+                if dist > radius - 1.0 {
+                    let edge_alpha = (radius - dist).clamp(0.0, 1.0);
+                    let inv_edge_alpha = 1.0 - edge_alpha;
+                    let fr = (target_color.0[0] as f32 * edge_alpha + current_pixel.0[0] as f32 * inv_edge_alpha) as u8;
+                    let fg = (target_color.0[1] as f32 * edge_alpha + current_pixel.0[1] as f32 * inv_edge_alpha) as u8;
+                    let fb = (target_color.0[2] as f32 * edge_alpha + current_pixel.0[2] as f32 * inv_edge_alpha) as u8;
+                    img.put_pixel(px as u32, py as u32, Rgba([fr, fg, fb, 255]));
+                } else {
+                    img.put_pixel(px as u32, py as u32, target_color);
                 }
             }
         }
     }
-    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), white);
+    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), Rgba([255, 255, 255, 255]));
     width
 }
 
@@ -215,13 +208,11 @@ fn draw_text_rgba(img: &mut RgbaImage, font: &Font, text: &str, x: i32, y: i32, 
     for glyph in font.layout(text, scale, offset) {
         if let Some(bb) = glyph.pixel_bounding_box() {
             glyph.draw(|gx, gy, gv| {
-                let px = bb.min.x + gx as i32;
-                let py = bb.min.y + gy as i32;
+                let px = bb.min.x + gx as i32; let py = bb.min.y + gy as i32;
                 if px >= 0 && px < img.width() as i32 && py >= 0 && py < img.height() as i32 {
                     let pixel = img.get_pixel_mut(px as u32, py as u32);
                     if gv > 0.01 {
-                        let alpha = gv;
-                        let inv_alpha = 1.0 - alpha;
+                        let alpha = gv; let inv_alpha = 1.0 - alpha;
                         pixel.0[0] = (pixel.0[0] as f32 * inv_alpha + color.0[0] as f32 * alpha) as u8;
                         pixel.0[1] = (pixel.0[1] as f32 * inv_alpha + color.0[1] as f32 * alpha) as u8;
                         pixel.0[2] = (pixel.0[2] as f32 * inv_alpha + color.0[2] as f32 * alpha) as u8;
@@ -231,4 +222,11 @@ fn draw_text_rgba(img: &mut RgbaImage, font: &Font, text: &str, x: i32, y: i32, 
             });
         }
     }
+}
+
+fn draw_text_centered_rgba(img: &mut RgbaImage, font: &Font, text: &str, center_x: i32, y: i32, scale: Scale, color: Rgba<u8>) {
+    let glyphs: Vec<_> = font.layout(text, scale, rusttype::point(0.0, 0.0)).collect();
+    let width = glyphs.iter().rev().filter_map(|g| g.pixel_bounding_box().map(|b| b.max.x)).next().unwrap_or(0);
+    let start_x = center_x - (width / 2);
+    draw_text_rgba(img, font, text, start_x, y, scale, color);
 }
