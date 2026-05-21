@@ -1,13 +1,24 @@
+//! Utility for fetching data from external APIs.
+//! 
+//! Provides a generic fetcher that handles health checks, HTTP requests, 
+//! and standard JSON wrapper unwrapping.
+
 use serde::Deserialize;
 use tracing::{debug, error, warn};
 use crate::utils::api_endpoints::api_base_url;
 
+/// Standard API response wrapper used by external Otterly APIs.
 #[derive(Deserialize)]
 pub struct ApiResponse<T> {
+    /// The actual data contained in the response.
     pub data: T,
 }
 
-/// Check if the API base URL is responsive
+/// Checks if the external API base URL is responsive.
+/// 
+/// # Errors
+/// 
+/// Returns an error message if the API cannot be reached or returns a non-success status code.
 pub async fn check_api_health() -> Result<(), String> {
     let client = reqwest::Client::new();
     let base_url = api_base_url();
@@ -22,7 +33,19 @@ pub async fn check_api_health() -> Result<(), String> {
     Ok(())
 }
 
-/// Generic helper to fetch data from an external API and extract the 'data' field
+/// Generic helper to fetch data from an external API and extract the 'data' field.
+/// 
+/// This function automatically performs a health check before the actual request.
+/// 
+/// # Arguments
+/// 
+/// * `url` - The full URL to fetch.
+/// * `description` - A human-readable description of the data (used for logging).
+/// 
+/// # Errors
+/// 
+/// Returns an error if the health check fails (as a warning), the request fails, 
+/// or the response body cannot be parsed into the expected type `T`.
 pub async fn fetch_api_data<T>(url: &str, description: &str) -> Result<T, String>
 where
     T: for<'de> Deserialize<'de>,
