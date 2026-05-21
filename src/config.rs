@@ -16,6 +16,8 @@ use config::{Config as ConfigTrait, ConfigError, File, FileFormat};
 pub struct Config {
     /// External API settings.
     pub api: ApiConfig,
+    /// Server settings including internal routes.
+    pub server: ServerConfig,
 }
 
 /// Settings for external API interactions.
@@ -23,17 +25,39 @@ pub struct Config {
 pub struct ApiConfig {
     /// The base URL for the external Otterly API.
     pub base_url: String,
-    /// Paths for specific API endpoints.
+    /// Paths for specific external API endpoints.
     pub endpoints: ApiEndpoints,
 }
 
-/// Paths for specific API endpoints.
+/// Paths for specific external API endpoints.
 #[derive(Debug, Deserialize, Clone)]
 pub struct ApiEndpoints {
     /// Path for fetching Discord user information.
     pub discord_user: String,
     /// Path for fetching Discord user statistics.
     pub discord_stats: String,
+}
+
+/// Server settings and internal route paths.
+#[derive(Debug, Deserialize, Clone)]
+pub struct ServerConfig {
+    /// Host to bind the server to.
+    pub host: String,
+    /// Port to bind the server to.
+    pub port: u16,
+    /// Internal API route paths.
+    pub routes: InternalRoutes,
+}
+
+/// Internal API route paths.
+#[derive(Debug, Deserialize, Clone)]
+pub struct InternalRoutes {
+    /// Base path for all API routes.
+    pub base: String,
+    /// Path for generating a test image.
+    pub generate_image: String,
+    /// Path for generating a Discord summary image.
+    pub discord_summary: String,
 }
 
 /// Static storage for the global configuration to ensure it's loaded only once.
@@ -51,7 +75,7 @@ impl Config {
             .add_source(File::new("default_config.yaml", FileFormat::Yaml))
             // Layer on the local configuration (Optional)
             .add_source(File::new("config.yaml", FileFormat::Yaml).required(false))
-            // Layer on environment variables (Optional, e.g., OAPI_API__BASE_URL)
+            // Layer on environment variables (Optional, e.g., OAPI_SERVER__PORT)
             .add_source(config::Environment::with_prefix("OAPI").separator("__"))
             .build()?;
 
@@ -77,6 +101,14 @@ pub fn init() {
     let config_path = Path::new("config.yaml");
     if !config_path.exists() {
         let template = r#"# Surcharges locales de configuration
+# server:
+#   host: "127.0.0.1"
+#   port: 3000
+#   routes:
+#     base: "/api"
+#     generate_image: "/images"
+#     discord_summary: "/discord-summary/:id"
+#
 # api:
 #   base_url: "https://votre-url-specifique.fr/api"
 #   endpoints:

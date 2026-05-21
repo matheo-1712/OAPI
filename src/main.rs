@@ -55,13 +55,15 @@ async fn main() {
     println!("{}", banner);
 
     // Build app
+    let config = config::Config::global();
     let app = Router::new()
-        .nest("/api", routes::api_routes())
+        .nest(&config.server.routes.base, routes::api_routes())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
         .fallback_service(ServeDir::new("public"))
         .layer(TraceLayer::new_for_http());
 
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr_str = format!("{}:{}", config.server.host, config.server.port);
+    let addr: SocketAddr = addr_str.parse().expect("Invalid address/port in config");
     
     tracing::info!("🚀 OAPI Server starting up...");
     tracing::info!("📡 Listening on http://{}", addr);
