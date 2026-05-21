@@ -6,13 +6,14 @@ Le service de génération d'images (`src/services/image_service.rs`) est respon
 
 ## Logique de Caching
 
-Pour optimiser les performances et éviter de redessiner inutilement des images identiques, le service utilise un système de cache basé sur le contenu des données.
+Pour optimiser les performances et éviter de redessiner inutilement des images identiques, le service utilise un système de cache basé sur le contenu des données et l'identifiant utilisateur.
 
-1.  **Calcul du Hash** : Avant toute génération, un hash SHA-256 est calculé à partir des données de l'utilisateur (pseudo, tag, avatar, statistiques agrégées, rôles).
-2.  **Vérification** : Si un fichier nommé `{hash}.png` existe déjà dans le dossier `public/generated_images/discord_summary/`, le service renvoie immédiatement son URL.
-3.  **Génération** : Si le fichier n'existe pas (données modifiées ou premier appel), le service dessine l'image.
+1.  **Organisation par Dossier** : Chaque utilisateur possède son propre dossier nommé selon son `discord_id` dans `public/generated_images/discord_summary/{discord_id}/`.
+2.  **Calcul du Hash** : Un hash SHA-256 est calculé à partir de l'état actuel des données de l'utilisateur.
+3.  **Vérification** : Si le fichier `{hash}.png` existe déjà dans le dossier de l'utilisateur, il est renvoyé immédiatement.
+4.  **Génération & Nettoyage** : Si les données ont changé (hash différent), le service **vide le dossier de l'utilisateur** pour ne conserver qu'une seule image (la plus récente) avant de générer la nouvelle.
 
-Cette approche garantit que l'image est toujours à jour par rapport aux statistiques réelles du joueur tout en étant extrêmement rapide lors d'appels répétés.
+Cette approche garantit que l'image est toujours à jour tout en évitant l'accumulation de fichiers obsolètes pour un même utilisateur.
 
 ---
 
