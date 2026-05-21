@@ -13,7 +13,7 @@ pub fn format_vocal_time(decimal_hours: f64) -> String {
     let total_seconds = (decimal_hours * 3600.0).round() as i64;
     let hours = total_seconds / 3600;
     let minutes = (total_seconds % 3600) / 60;
-    
+
     if hours > 0 {
         format!("{}h {:02}m", hours, minutes)
     } else {
@@ -51,7 +51,10 @@ mod tests {
     #[test]
     fn test_truncate_text() {
         assert_eq!(truncate_text("Hello World", 20), "Hello World");
-        assert_eq!(truncate_text("This is a very long string", 10), "This is...");
+        assert_eq!(
+            truncate_text("This is a very long string", 10),
+            "This is..."
+        );
         assert_eq!(truncate_text("Loutre", 6), "Loutre");
     }
 }

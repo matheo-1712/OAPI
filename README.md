@@ -75,9 +75,29 @@ L'API est auto-documentée. Une fois le serveur lancé, accédez à :
 cargo run
 ```
 
-### Vérifier le code
+---
+
+## 🛠 CI/CD et Qualité du Code
+
+Ce projet utilise un pipeline **GitHub Actions** pour garantir la qualité du code à chaque modification.
+
+### Vérifications automatisées
+- **Formatage** : `cargo fmt --all -- --check`
+- **Linting** : `cargo clippy --all-targets --all-features -- -D warnings`
+- **Tests** : `cargo test --all-features`
+- **Build** : `cargo build --release`
+
+### Exécuter les vérifications localement
+Il est recommandé de lancer ces commandes avant de pousser vos modifications :
 ```bash
-cargo check
+# Formater le code
+cargo fmt
+
+# Vérifier les lints
+cargo clippy --all-targets --all-features -- -D warnings
+
+# Lancer les tests
+cargo test
 ```
 
 ## 🎨 Technologies utilisées

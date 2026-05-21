@@ -1,6 +1,6 @@
 //! Data models for Discord-related entities.
-//! 
-//! This module defines the Data Transfer Objects (DTOs) used for 
+//!
+//! This module defines the Data Transfer Objects (DTOs) used for
 //! communication with external Discord APIs and our internal services.
 
 use serde::{Deserialize, Serialize};
@@ -84,4 +84,3 @@ pub struct DiscordStats {
     /// Users most frequently spent time with in voice.
     pub vocal_with: Vec<DiscordVoiceConnection>,
 }
-

@@ -1,15 +1,15 @@
 //! OAPI - Otter API
-//! 
-//! A high-performance Rust API based on Axum, designed to automate profile image 
+//!
+//! A high-performance Rust API based on Axum, designed to automate profile image
 //! generation and statistics summaries for the Otter community.
 
+mod actions;
+mod config;
 mod handlers;
 mod models;
-mod services;
 mod routes;
-mod actions;
+mod services;
 mod utils;
-mod config;
 
 use axum::Router;
 use std::net::SocketAddr;
@@ -19,13 +19,11 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(
-        handlers::discord_handler::create_discord_summary_by_id
-    ),
+    paths(handlers::discord_handler::create_discord_summary_by_id),
     components(schemas(
-        models::ImageRequest, 
-        models::ImageResponse, 
-        models::DiscordUser, 
+        models::ImageRequest,
+        models::ImageResponse,
+        models::DiscordUser,
         models::DiscordRole,
         models::DiscordStats,
         models::DiscordChannel,
@@ -61,7 +59,7 @@ async fn main() {
 
     // Build app
     let config = config::Config::global();
-    
+
     // Modify OpenAPI spec at runtime to match configured routes
     let mut openapi = ApiDoc::openapi();
     update_openapi_paths(&mut openapi, config);
@@ -74,7 +72,7 @@ async fn main() {
 
     let addr_str = format!("{}:{}", config.server.host, config.server.port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address/port in config");
-    
+
     tracing::info!("🚀 OAPI Server starting up...");
     tracing::info!("📡 Listening on http://{}", addr);
     tracing::info!("📖 Swagger UI available at http://{}/swagger-ui", addr);
@@ -88,15 +86,17 @@ async fn main() {
 fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config::Config) {
     let mut new_paths = utoipa::openapi::path::PathsBuilder::new();
     let base = &config.server.routes.base;
-    
+
     // For each path in the original spec, try to find a matching config and remap it
     for (path, item) in openapi.paths.paths.iter() {
         let new_path = if path.contains("discord-summary") {
             // Convert Axum :param to OpenAPI {param}
-            let dynamic_path = config.server.routes.discord_summary
-                .replace(":", "{")
-                .replace("/", "/"); // Ensure leading slash
-            
+            let dynamic_path = config
+                .server
+                .routes
+                .discord_summary
+                .replace(":", "{");
+
             // If the parameter in YAML doesn't end with }, add it
             let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {
                 format!("{}}}", dynamic_path)
@@ -108,9 +108,9 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
         } else {
             path.clone()
         };
-        
+
         new_paths = new_paths.path(new_path, item.clone());
     }
-    
+
     openapi.paths = new_paths.build();
 }
