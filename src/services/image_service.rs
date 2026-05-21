@@ -1,3 +1,8 @@
+//! Service for complex image generation and processing.
+//! 
+//! This module handles the creation of dynamic Discord profile summary cards,
+//! including data aggregation, font rendering, and local caching using hashes.
+
 use tracing::debug;
 use crate::models::{ImageResponse, DiscordUser};
 use crate::utils::{formatters, paths};
@@ -38,7 +43,10 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
     }
 }
 
-/// Generate a unique hash for the user state to handle caching
+/// Generate a unique SHA-256 hash for the user state to handle caching.
+/// 
+/// The hash is based on user identity, stats, and roles. If any of these change,
+/// the hash will change, triggering a re-generation of the image.
 fn calculate_user_hash(user: &DiscordUser) -> String {
     let mut hasher = Sha256::new();
     
@@ -65,7 +73,11 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Service for generating a MASTERPIECE Discord profile image summary with hashing cache
+/// Service for generating a Discord profile image summary with hashing cache.
+/// 
+/// This function aggregates Discord statistics, processes the user avatar, 
+/// and draws a high-fidelity summary card. It uses a caching mechanism based 
+/// on the user's data state hash to avoid redundant generation.
 pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     let _ = fs::create_dir_all(paths::DISCORD_SUMMARY_DIR);
     
@@ -82,6 +94,8 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     }
 
     debug!("Cache miss: Generating new profile image for user: {}", user.pseudo_discord);
+    
+    // ... rest of the implementation
 
     // 3. Generation (if not in cache)
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);

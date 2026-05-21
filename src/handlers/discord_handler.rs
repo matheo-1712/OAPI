@@ -1,9 +1,17 @@
+//! HTTP request handlers for Discord-related endpoints.
+//! 
+//! This module acts as the entry point for HTTP requests, extracting parameters 
+//! and delegating the business logic to the action layer.
+
 use axum::{Json, extract::Path, http::StatusCode};
 use crate::models::ImageResponse;
 use crate::actions::discord_actions;
 use tracing::{info, error};
 
-/// Generate a Discord profile image summary by fetching data from external API
+/// Generates a Discord profile image summary for a specific user ID.
+/// 
+/// This handler extracts the `discord_id` from the URL path and invokes 
+/// the corresponding action to fetch data and generate the image.
 #[utoipa::path(
     post,
     path = "/api/discord-summary/{discord_id}",

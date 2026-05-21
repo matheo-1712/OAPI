@@ -1,3 +1,8 @@
+//! OAPI - Otter API
+//! 
+//! A high-performance Rust API based on Axum, designed to automate profile image 
+//! generation and statistics summaries for the Otter community.
+
 mod handlers;
 mod models;
 mod services;
