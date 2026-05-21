@@ -1,14 +1,14 @@
 //! Configuration management for OAPI.
-//! 
+//!
 //! This module handles the loading and merging of configuration from multiple sources:
 //! 1. `default_config.yaml` (Base defaults)
 //! 2. `config.yaml` (Local overrides, ignored by Git)
 
+use config::{Config as ConfigTrait, ConfigError, File, FileFormat};
 use serde::{Deserialize, Serialize};
-use std::sync::OnceLock;
 use std::fs;
 use std::path::Path;
-use config::{Config as ConfigTrait, ConfigError, File, FileFormat};
+use std::sync::OnceLock;
 
 /// Global configuration structure.
 #[derive(Debug, Deserialize, Serialize, Clone)]
@@ -55,9 +55,9 @@ pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
 impl Config {
     /// Loads the configuration from the hierarchical sources.
-    /// 
+    ///
     /// # Errors
-    /// 
+    ///
     /// Returns a [`ConfigError`] if the mandatory `default_config.yaml` is missing or invalid.
     pub fn load() -> Result<Self, ConfigError> {
         let s = ConfigTrait::builder()
@@ -71,9 +71,9 @@ impl Config {
     }
 
     /// Provides a global reference to the loaded configuration.
-    /// 
+    ///
     /// # Panics
-    /// 
+    ///
     /// Panics if called before [`init()`].
     pub fn global() -> &'static Config {
         CONFIG.get().expect("Config is not initialized")
@@ -81,7 +81,7 @@ impl Config {
 }
 
 /// Initializes the global configuration.
-/// 
+///
 /// This function should be called at the very beginning of the program.
 /// It also ensures that a local `config.yaml` exists.
 pub fn init() {
@@ -93,7 +93,7 @@ pub fn init() {
 
         let mut template = String::from("# OAPI - Surcharges locales de configuration\n");
         template.push_str("# Décommentez les lignes pour surcharger les valeurs par défaut de 'default_config.yaml'\n\n");
-        
+
         for line in default_config_content.lines() {
             if line.trim().is_empty() {
                 template.push('\n');
@@ -109,7 +109,9 @@ pub fn init() {
     }
 
     let config = Config::load().expect("Failed to load configuration");
-    CONFIG.set(config).expect("Failed to set global configuration");
+    CONFIG
+        .set(config)
+        .expect("Failed to set global configuration");
 }
 
 #[cfg(test)]
@@ -140,9 +142,9 @@ external_apis:
             .add_source(File::new(default_path, FileFormat::Yaml))
             .build()
             .unwrap();
-        
+
         let config: Config = s.try_deserialize().unwrap();
-        
+
         assert_eq!(config.server.port, 8080);
         assert_eq!(config.external_apis.discord_user, "http://user");
 
@@ -153,7 +155,7 @@ external_apis:
     fn test_config_override() {
         let test_default = "server:\n  port: 8080\n  host: \"127.0.0.1\"\n  routes:\n    base: \"/\"\n    generate_image: \"/\"\n    discord_summary: \"/\"\nexternal_apis:\n  discord_user: \"\"\n  discord_stats: \"\"\n  health_check: \"\"\n";
         let test_override = "server:\n  port: 9090\n";
-        
+
         fs::write("t_default.yaml", test_default).unwrap();
         fs::write("t_override.yaml", test_override).unwrap();
 
@@ -162,9 +164,9 @@ external_apis:
             .add_source(File::new("t_override.yaml", FileFormat::Yaml))
             .build()
             .unwrap();
-        
+
         let config: Config = s.try_deserialize().unwrap();
-        
+
         assert_eq!(config.server.port, 9090); // Overridden
         assert_eq!(config.server.host, "127.0.0.1"); // Kept from default
 

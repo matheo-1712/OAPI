@@ -1,6 +1,6 @@
 //! Centralized management for external API endpoints.
-//! 
-//! This module retrieves URLs for external services from the 
+//!
+//! This module retrieves URLs for external services from the
 //! application's configuration.
 
 use crate::config::Config;
@@ -27,7 +27,7 @@ pub fn discord_stats_url() -> &'static str {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config::{Config, ExternalApis, ServerConfig, InternalRoutes, CONFIG};
+    use crate::config::{CONFIG, Config, ExternalApis, InternalRoutes, ServerConfig};
 
     #[test]
     fn test_url_retrieval() {
@@ -43,11 +43,11 @@ mod tests {
                 routes: InternalRoutes {
                     base: "/api".to_string(),
                     discord_summary: "/discord".to_string(),
-                }
-            }
+                },
+            },
         };
-        
-        let _ = CONFIG.set(mock_config); 
+
+        let _ = CONFIG.set(mock_config);
 
         assert_eq!(api_health_check_url(), "http://health");
         assert_eq!(discord_user_url(), "http://user");

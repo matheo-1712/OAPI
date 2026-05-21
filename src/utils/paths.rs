@@ -9,7 +9,9 @@ mod tests {
 
     #[test]
     fn test_paths_defined() {
-        assert!(!DISCORD_SUMMARY_DIR.is_empty());
+        assert_eq!(
+            DISCORD_SUMMARY_DIR,
+            "public/generated_images/discord_summary"
+        );
     }
 }
-
