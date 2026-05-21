@@ -48,6 +48,17 @@ Le projet inclut un utilitaire robuste pour interagir avec des APIs externes (`s
 
 ---
 
+## 📚 Documentation Détaillée
+
+Pour plus de détails sur le fonctionnement interne, consultez les guides suivants dans le dossier `docs/` :
+
+- [**Architecture**](./docs/architecture.md) : Comprendre les couches et le flux de données.
+- [**Système de Configuration**](./docs/configuration.md) : Maîtriser les surcharges YAML et ENV.
+- [**Génération d'Images**](./docs/generation_images.md) : Détails sur le moteur graphique et le cache.
+- [**Ajouter une API Externe**](./docs/ajouter_api_externe.md) : Guide pas à pas pour l'extension.
+
+---
+
 ## 📖 Documentation API (Swagger)
 
 L'API est auto-documentée. Une fois le serveur lancé, accédez à :
