@@ -1,22 +1,39 @@
 use tracing::debug;
 use crate::models::{ImageRequest, ImageResponse, DiscordUser};
-use crate::utils::formatters;
+use crate::utils::{formatters, constants::*};
 use std::fs;
 use std::path::Path;
 use image::{RgbaImage, Rgba, imageops::FilterType};
 use rusttype::{Font, Scale};
 use std::collections::HashMap;
 
+// --- Visual Configuration Constants ---
+const CARD_WIDTH: u32 = 1100;
+const CARD_HEIGHT: u32 = 650;
+const SIDEBAR_WIDTH: u32 = 300;
+
+const COLOR_BG_DEEP: [u8; 4] = [15, 15, 18, 255];
+const COLOR_SIDEBAR_BG: [u8; 4] = [30, 31, 34, 255];
+const COLOR_ACCENT_BLURPLE: [u8; 4] = [88, 101, 242, 255];
+const COLOR_WHITE: [u8; 4] = [255, 255, 255, 255];
+const COLOR_GRAY_LABEL: [u8; 4] = [150, 152, 157, 255];
+const COLOR_CARD_BG: [u8; 4] = [43, 45, 49, 255];
+const COLOR_INNER_BADGE: [u8; 4] = [30, 31, 34, 255];
+const COLOR_SEPARATOR: [u8; 4] = [40, 41, 45, 255];
+
+const FONT_DATA: &[u8] = include_bytes!("../../public/font/ARIAL.TTF");
+
+const OUTPUT_DIR: &str = "public/generated_images";
+
 /// Service for generating an image locally and returning its metadata
 pub fn generate_image_mock(req: ImageRequest) -> ImageResponse {
     debug!("Generating local image for prompt: {}", req.prompt);
-    let output_dir = "public/generated_images";
-    let _ = fs::create_dir_all(output_dir);
+    let _ = fs::create_dir_all(OUTPUT_DIR);
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{}.png", file_id);
-    let file_path = Path::new(output_dir).join(&file_name);
+    let file_path = Path::new(OUTPUT_DIR).join(&file_name);
     let mut img = RgbaImage::new(req.width, req.height);
-    for pixel in img.pixels_mut() { *pixel = Rgba([30, 30, 35, 255]); }
+    for pixel in img.pixels_mut() { *pixel = Rgba(COLOR_SIDEBAR_BG); }
     let _ = img.save(&file_path);
     ImageResponse { url: format!("/generated_images/{}", file_name) }
 }
@@ -30,7 +47,7 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
         let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(242);
         Rgba([r, g, b, 255])
     } else {
-        Rgba([88, 101, 242, 255]) 
+        Rgba(COLOR_ACCENT_BLURPLE) 
     }
 }
 
@@ -38,32 +55,27 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
 pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     debug!("Generating OVERHAULED profile image for user: {}", user.pseudo_discord);
     
-    let output_dir = "public/generated_images";
-    let _ = fs::create_dir_all(output_dir);
+    let _ = fs::create_dir_all(OUTPUT_DIR);
     let file_id = uuid::Uuid::new_v4().to_string();
     let file_name = format!("{}.png", file_id);
-    let file_path = Path::new(output_dir).join(&file_name);
+    let file_path = Path::new(OUTPUT_DIR).join(&file_name);
 
-    let width = 1100;
-    let height = 650;
-    let mut img = RgbaImage::new(width, height);
+    let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
 
-    let bg_deep = Rgba([15, 15, 18, 255]);
-    let sidebar_bg = Rgba([30, 31, 34, 255]);
-    let accent_blurple = Rgba([88, 101, 242, 255]);
-    let white = Rgba([255, 255, 255, 255]);
-    let gray_label = Rgba([150, 152, 157, 255]);
+    let bg_deep = Rgba(COLOR_BG_DEEP);
+    let sidebar_bg = Rgba(COLOR_SIDEBAR_BG);
+    let accent_blurple = Rgba(COLOR_ACCENT_BLURPLE);
+    let white = Rgba(COLOR_WHITE);
+    let gray_label = Rgba(COLOR_GRAY_LABEL);
 
     for pixel in img.pixels_mut() { *pixel = bg_deep; }
 
     // --- 1. SIDEBAR ---
-    for x in 0..300 { for y in 0..height { img.put_pixel(x as u32, y as u32, sidebar_bg); } }
-    for y in 0..height { img.put_pixel(300, y, Rgba([40, 41, 45, 255])); }
-    for x in 0..300 { for y in 0..6 { img.put_pixel(x, y, accent_blurple); } }
+    for x in 0..SIDEBAR_WIDTH { for y in 0..CARD_HEIGHT { img.put_pixel(x as u32, y as u32, sidebar_bg); } }
+    for y in 0..CARD_HEIGHT { img.put_pixel(SIDEBAR_WIDTH, y, Rgba(COLOR_SEPARATOR)); }
+    for x in 0..SIDEBAR_WIDTH { for y in 0..6 { img.put_pixel(x, y, accent_blurple); } }
 
-    // Use local font file
-    let font_data = include_bytes!("../../public/font/ARIAL.TTF");
-    let font = Font::try_from_bytes(font_data as &[u8]).expect("Error loading bundled ARIAL.TTF");
+    let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
 
     // --- 2. AVATAR ---
     if let Some(avatar_url) = user.avatar_url {
@@ -91,10 +103,10 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     // --- 3. IDENTITY ---
     let pseudo_truncated = formatters::truncate_text(&user.pseudo_discord, 15);
     draw_text_centered_rgba(&mut img, &font, &pseudo_truncated, 150, 280, Scale::uniform(38.0), white);
-    draw_text_centered_rgba(&mut img, &font, &format!("@{}", user.tag_discord), 150, 325, Scale::uniform(22.0), gray_label);
+    draw_text_centered_rgba(&mut img, &font, &format!("{}", user.tag_discord), 150, 325, Scale::uniform(22.0), gray_label);
     
     let formatted_join = formatters::format_discord_date(&user.join_date_discord);
-    draw_text_centered_rgba(&mut img, &font, "MEMBRE DEPUIS LE", 150, 380, Scale::uniform(14.0), gray_label);
+    draw_text_centered_rgba(&mut img, &font, LABEL_MEMBER_SINCE, 150, 380, Scale::uniform(14.0), gray_label);
     draw_text_centered_rgba(&mut img, &font, &formatted_join, 150, 405, Scale::uniform(18.0), white);
 
     // --- 4. DATA ---
@@ -123,15 +135,15 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
     let card_w = 340;
     let card_h = 120;
 
-    draw_stat_card(&mut img, grid_x, grid_y, card_w, card_h, "MESSAGES ENVOYÉS", &format!("{}", total_messages), &font);
-    draw_stat_card(&mut img, grid_x + 370, grid_y, card_w, card_h, "TEMPS VOCAL TOTAL", &formatters::format_vocal_time(total_vocal_decimal), &font);
-    draw_stat_card(&mut img, grid_x, grid_y + 150, card_w, card_h, "TOP COMPAGNON", &formatters::truncate_text(&top_companion, 20), &font);
-    draw_stat_card(&mut img, grid_x + 370, grid_y + 150, card_w, card_h, "SALON TEXTUEL", &formatters::truncate_text(&top_text, 20), &font);
-    draw_stat_card(&mut img, grid_x, grid_y + 300, 710, card_h, "SALON VOCAL PRÉFÉRÉ", &formatters::truncate_text(&top_voice, 40), &font);
+    draw_stat_card(&mut img, grid_x, grid_y, card_w, card_h, LABEL_MESSAGES, &format!("{}", total_messages), &font);
+    draw_stat_card(&mut img, grid_x + 370, grid_y, card_w, card_h, LABEL_VOCAL_TIME, &formatters::format_vocal_time(total_vocal_decimal), &font);
+    draw_stat_card(&mut img, grid_x, grid_y + 150, card_w, card_h, LABEL_COMPANION, &formatters::truncate_text(&top_companion, 20), &font);
+    draw_stat_card(&mut img, grid_x + 370, grid_y + 150, card_w, card_h, LABEL_TEXT_CHANNEL, &formatters::truncate_text(&top_text, 20), &font);
+    draw_stat_card(&mut img, grid_x, grid_y + 300, 710, card_h, LABEL_VOICE_CHANNEL, &formatters::truncate_text(&top_voice, 40), &font);
 
     // --- 6. ROLES SECTION ---
-    let roles_label_y = grid_y + 300 + card_h + 30; // 30px gap like between blocks
-    draw_text_rgba(&mut img, &font, "RÔLES PRIORITAIRES", grid_x as i32, roles_label_y as i32, Scale::uniform(18.0), gray_label);
+    let roles_label_y = grid_y + 300 + card_h + 30; 
+    draw_text_rgba(&mut img, &font, LABEL_ROLES_TITLE, grid_x as i32, roles_label_y as i32, Scale::uniform(18.0), gray_label);
     
     let mut rx = grid_x as i32;
     let mut ry = roles_label_y as i32 + 35;
@@ -139,7 +151,7 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
         let color = parse_hex_color(&role.color);
         let w = draw_pill_high_fidelity(&mut img, rx, ry, &role.name, &font, color);
         rx += w + 12;
-        if rx > width as i32 - 150 { rx = grid_x as i32; ry += 45; }
+        if rx > CARD_WIDTH as i32 - 150 { rx = grid_x as i32; ry += 45; }
     }
 
     let _ = img.save(&file_path);
@@ -147,9 +159,9 @@ pub async fn generate_discord_profil(user: DiscordUser) -> ImageResponse {
 }
 
 fn draw_stat_card(img: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, label: &str, val: &str, font: &Font) {
-    let card_bg = Rgba([30, 31, 34, 255]);
-    let gray_label = Rgba([150, 152, 157, 255]);
-    let white = Rgba([255, 255, 255, 255]);
+    let card_bg = Rgba(COLOR_CARD_BG);
+    let gray_label = Rgba(COLOR_GRAY_LABEL);
+    let white = Rgba(COLOR_WHITE);
     for bx in x..(x + w) { for by in y..(y + h) { if bx < img.width() && by < img.height() { img.put_pixel(bx, by, card_bg); } } }
     for bx in x..(x + w) { img.put_pixel(bx, y + h - 1, Rgba([88, 101, 242, 100])); }
     draw_text_rgba(img, font, label, (x + 25) as i32, (y + 25) as i32, Scale::uniform(15.0), gray_label);
@@ -157,7 +169,7 @@ fn draw_stat_card(img: &mut RgbaImage, x: u32, y: u32, w: u32, h: u32, label: &s
 }
 
 fn draw_pill_high_fidelity(img: &mut RgbaImage, x: i32, y: i32, text: &str, font: &Font, color: Rgba<u8>) -> i32 {
-    let inner_bg = Rgba([30, 31, 34, 255]);
+    let inner_bg = Rgba(COLOR_INNER_BADGE);
     let text_len = text.chars().count() as i32 * 11;
     let width = (text_len + 40).max(120);
     let height = 34;
@@ -198,7 +210,7 @@ fn draw_pill_high_fidelity(img: &mut RgbaImage, x: i32, y: i32, text: &str, font
             }
         }
     }
-    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), Rgba([255, 255, 255, 255]));
+    draw_text_rgba(img, font, text, x + 20, y + 8, Scale::uniform(16.0), Rgba(COLOR_WHITE));
     width
 }
 
@@ -211,7 +223,7 @@ fn draw_text_rgba(img: &mut RgbaImage, font: &Font, text: &str, x: i32, y: i32, 
                 let px = bb.min.x + gx as i32; let py = bb.min.y + gy as i32;
                 if px >= 0 && px < img.width() as i32 && py >= 0 && py < img.height() as i32 {
                     let pixel = img.get_pixel_mut(px as u32, py as u32);
-                    if gv > 0.01 {
+                    if gv > 0.05 {
                         let alpha = gv; let inv_alpha = 1.0 - alpha;
                         pixel.0[0] = (pixel.0[0] as f32 * inv_alpha + color.0[0] as f32 * alpha) as u8;
                         pixel.0[1] = (pixel.0[1] as f32 * inv_alpha + color.0[1] as f32 * alpha) as u8;
