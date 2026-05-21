@@ -10,7 +10,5 @@ pub struct ImageRequest {
 
 #[derive(Serialize, Deserialize, ToSchema, Clone)]
 pub struct ImageResponse {
-    pub id: String,
     pub url: String,
-    pub status: String,
 }

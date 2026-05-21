@@ -1,11 +1,17 @@
+//! OAPI - Otter API
+//! 
+//! A high-performance Rust API based on Axum, designed to automate profile image 
+//! generation and statistics summaries for the Otter community.
+
 mod handlers;
 mod models;
 mod services;
+mod routes;
+mod actions;
+mod utils;
+mod config;
 
-use axum::{
-    routing::post,
-    Router,
-};
+use axum::Router;
 use std::net::SocketAddr;
 use tower_http::{services::ServeDir, trace::TraceLayer};
 use utoipa::OpenApi;
@@ -13,20 +19,32 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handlers::create_image),
-    components(schemas(models::ImageRequest, models::ImageResponse))
+    paths(
+        handlers::discord_handler::create_discord_summary_by_id
+    ),
+    components(schemas(
+        models::ImageRequest, 
+        models::ImageResponse, 
+        models::DiscordUser, 
+        models::DiscordRole,
+        models::DiscordStats,
+        models::DiscordChannel,
+        models::DiscordVoiceConnection
+    ))
 )]
 struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
-    // Initialize tracing with a simplified and compact format
+    // Initialize config
+    config::init();
+
+    // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
                 .unwrap_or_else(|_| "info,OAPI=debug,tower_http=debug".into()),
         )
-        .with_timer(tracing_subscriber::fmt::time::ChronoLocal::new("%Y-%m-%d %H:%M:%S".to_string()))
         .compact()
         .init();
 
@@ -41,19 +59,21 @@ async fn main() {
     "#;
     println!("{}", banner);
 
-    // Build our application with routes
+    // Build app
+    let config = config::Config::global();
+    
+    // Modify OpenAPI spec at runtime to match configured routes
+    let mut openapi = ApiDoc::openapi();
+    update_openapi_paths(&mut openapi, config);
+
     let app = Router::new()
-        // API routes
-        .route("/api/images", post(handlers::create_image))
-        // Swagger UI
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
-        // Serve static files from the "public" directory
+        .nest(&config.server.routes.base, routes::api_routes())
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .fallback_service(ServeDir::new("public"))
-        // Add logging middleware
         .layer(TraceLayer::new_for_http());
 
-    // Run it with hyper
-    let addr = SocketAddr::from(([127, 0, 0, 1], 3000));
+    let addr_str = format!("{}:{}", config.server.host, config.server.port);
+    let addr: SocketAddr = addr_str.parse().expect("Invalid address/port in config");
     
     tracing::info!("🚀 OAPI Server starting up...");
     tracing::info!("📡 Listening on http://{}", addr);
@@ -62,4 +82,26 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+/// Update OpenAPI paths to match dynamic configuration
+fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config::Config) {
+    let mut new_paths = utoipa::openapi::path::PathsBuilder::new();
+    let base = &config.server.routes.base;
+    
+    // For each path in the original spec, try to find a matching config and remap it
+    for (path, item) in openapi.paths.paths.iter() {
+        let new_path = if path.contains("discord-summary") {
+            format!("{}{}", base, config.server.routes.discord_summary.replace(":", "{").replace("}", "") + "}")
+        } else {
+            path.clone()
+        };
+        
+        // Clean up the braces from our naive replace if needed
+        let final_path = new_path.replace("}}", "}");
+        
+        new_paths = new_paths.path(final_path, item.clone());
+    }
+    
+    openapi.paths = new_paths.build();
 }

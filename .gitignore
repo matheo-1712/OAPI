@@ -1,2 +1,4 @@
 /target
 .idea
+public/generated_images
+config.yaml
