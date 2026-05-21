@@ -4,9 +4,9 @@ server:
   routes:
     base: "/api"
     generate_image: "/images"
-    discord_summary: "/discord-summary/:id"
+    discord_summary: "/discord-summary/:discord_id"
 
 external_apis:
   discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
   discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
-  health_check: "https://otterlyapi.antredesloutres.fr/api"
+  health_check: "https://otterlyapi.antredesloutres.fr/"
