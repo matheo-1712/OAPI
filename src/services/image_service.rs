@@ -79,13 +79,14 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
 /// and draws a high-fidelity summary card. It uses a caching mechanism based 
 /// on the user's data state hash to avoid redundant generation.
 pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
-    let _ = fs::create_dir_all(paths::DISCORD_SUMMARY_DIR);
+    let user_dir = Path::new(paths::DISCORD_SUMMARY_DIR).join(&user.discord_id);
+    let _ = fs::create_dir_all(&user_dir);
     
     // 1. Calculate unique hash for current user data state
     let user_hash = calculate_user_hash(&user);
     let file_name = format!("{}.png", user_hash);
-    let file_path = Path::new(paths::DISCORD_SUMMARY_DIR).join(&file_name);
-    let public_url = format!("/generated_images/discord_summary/{}", file_name);
+    let file_path = user_dir.join(&file_name);
+    let public_url = format!("/generated_images/discord_summary/{}/{}", user.discord_id, file_name);
 
     // 2. Cache Check: If image with this hash exists, return it immediately
     if file_path.exists() {
@@ -94,6 +95,13 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     }
 
     debug!("Cache miss: Generating new profile image for user: {}", user.pseudo_discord);
+
+    // Ensure ONLY ONE image per user by clearing their specific directory on cache miss
+    if let Ok(entries) = fs::read_dir(&user_dir) {
+        for entry in entries.flatten() {
+            let _ = fs::remove_file(entry.path());
+        }
+    }
 
     // 3. Generation (if not in cache)
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);

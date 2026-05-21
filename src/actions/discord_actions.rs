@@ -15,14 +15,14 @@ use tracing::debug;
 /// 
 /// # Arguments
 /// 
-/// * `discord_id` - The unique Discord snowflake ID of the user.
+/// * `id` - The unique internal database ID of the user.
 /// 
 /// # Errors
 /// 
 /// Returns an error if any part of the data fetching or image generation fails.
-pub async fn get_discord_summary_action(discord_id: &str) -> Result<ImageResponse, String> {
+pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, String> {
     // 1. Fetch data (Logic moved from handler)
-    let user = fetch_discord_data(discord_id).await?;
+    let user = fetch_discord_data(id).await?;
 
     // 2. We could here "structure" or "filter" what we want to keep 
     // for the final response if we were returning the object itself.
@@ -35,15 +35,15 @@ pub async fn get_discord_summary_action(discord_id: &str) -> Result<ImageRespons
 }
 
 /// Private helper to aggregate Discord user info and stats from multiple endpoints.
-async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
-    debug!("Action: Fetching external data for discord_id: {}", discord_id);
+async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
+    debug!("Action: Fetching external data for id: {}", id);
     
     // Fetch user info (ID is appended to the configured full URL)
-    let user_url = format!("{}/{}", discord_user_url(), discord_id);
+    let user_url = format!("{}/{}", discord_user_url(), id);
     let mut user: DiscordUser = fetch_api_data(&user_url, "user info").await?;
         
     // Fetch user stats (ID is appended to the configured full URL)
-    let stats_url = format!("{}/{}", discord_stats_url(), discord_id);
+    let stats_url = format!("{}/{}", discord_stats_url(), id);
     user.stats = fetch_api_data(&stats_url, "stats").await?;
 
     Ok(user)
