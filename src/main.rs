@@ -56,9 +56,14 @@ async fn main() {
 
     // Build app
     let config = config::Config::global();
+    
+    // Modify OpenAPI spec at runtime to match configured routes
+    let mut openapi = ApiDoc::openapi();
+    update_openapi_paths(&mut openapi, config);
+
     let app = Router::new()
         .nest(&config.server.routes.base, routes::api_routes())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", ApiDoc::openapi()))
+        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .fallback_service(ServeDir::new("public"))
         .layer(TraceLayer::new_for_http());
 
@@ -72,4 +77,26 @@ async fn main() {
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();
+}
+
+/// Update OpenAPI paths to match dynamic configuration
+fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config::Config) {
+    let mut new_paths = utoipa::openapi::path::PathsBuilder::new();
+    let base = &config.server.routes.base;
+    
+    // For each path in the original spec, try to find a matching config and remap it
+    for (path, item) in openapi.paths.paths.iter() {
+        let new_path = if path.contains("discord-summary") {
+            format!("{}{}", base, config.server.routes.discord_summary.replace(":", "{").replace("}", "") + "}")
+        } else {
+            path.clone()
+        };
+        
+        // Clean up the braces from our naive replace if needed
+        let final_path = new_path.replace("}}", "}");
+        
+        new_paths = new_paths.path(final_path, item.clone());
+    }
+    
+    openapi.paths = new_paths.build();
 }
