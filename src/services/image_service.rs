@@ -328,7 +328,7 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
             h: card_h,
         },
         LABEL_TEXT_CHANNEL,
-        &formatters::truncate_text(&top_text, 20),
+        &formatters::truncate_text(&top_text, 15),
         &font,
     );
     draw_stat_card(
