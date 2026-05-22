@@ -117,7 +117,4 @@ Deep dives into specific modules:
 - **Tracing**: Structured diagnostic logging.
 
 ---
-
-<p align="center">
-  Built with ❤️ for the Antre des Loutres community.
-</p>
+Built by [matheo-1712](https://github.com/matheo-1712)
