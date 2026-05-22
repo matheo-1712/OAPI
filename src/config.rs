@@ -139,8 +139,10 @@ pub fn init() {
         let default_config_content = fs::read_to_string("default_config.yaml")
             .unwrap_or_else(|_| "server:\n  host: \"127.0.0.1\"\n".to_string());
 
-        let mut template = String::from("# OAPI - Surcharges locales de configuration\n");
-        template.push_str("# Décommentez les lignes pour surcharger les valeurs par défaut de 'default_config.yaml'\n\n");
+        let mut template = String::from("# OAPI - Local configuration overrides\n");
+        template.push_str(
+            "# Uncomment lines to override default values from 'default_config.yaml'\n\n",
+        );
 
         for line in default_config_content.lines() {
             if line.trim().is_empty() {
@@ -153,7 +155,7 @@ pub fn init() {
             }
         }
 
-        fs::write(config_path, template).expect("Impossible de créer le fichier config.yaml");
+        fs::write(config_path, template).expect("Unable to create config.yaml file");
     }
 
     let config = Config::load().expect("Failed to load configuration");

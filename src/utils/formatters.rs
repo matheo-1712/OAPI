@@ -1,6 +1,6 @@
 use chrono::DateTime;
 
-/// Formate une date ISO 8601 (ex: 2023-05-29T...) en format lisible JJ/MM/AAAA
+/// Formats an ISO 8601 date (e.g., 2023-05-29T...) into a readable DD/MM/YYYY format.
 pub fn format_discord_date(iso_date: &str) -> String {
     match DateTime::parse_from_rfc3339(iso_date) {
         Ok(dt) => dt.format("%d/%m/%Y").to_string(),
@@ -8,7 +8,7 @@ pub fn format_discord_date(iso_date: &str) -> String {
     }
 }
 
-/// Convertit un temps vocal décimal (heures) en format "Xh Ym"
+/// Converts decimal vocal time (hours) into "Xh Ym" format.
 pub fn format_vocal_time(decimal_hours: f64) -> String {
     let total_seconds = (decimal_hours * 3600.0).round() as i64;
     let hours = total_seconds / 3600;
@@ -21,7 +21,7 @@ pub fn format_vocal_time(decimal_hours: f64) -> String {
     }
 }
 
-/// Troncature simple d'un texte s'il dépasse une certaine longueur
+/// Simple text truncation if it exceeds a certain length.
 pub fn truncate_text(text: &str, max_len: usize) -> String {
     if text.chars().count() > max_len {
         let truncated: String = text.chars().take(max_len - 3).collect();
