@@ -3,37 +3,14 @@
 //! Provides a generic fetcher that handles health checks, HTTP requests,
 //! and standard JSON wrapper unwrapping.
 
-use crate::utils::api_endpoints::api_health_check_url;
 use serde::Deserialize;
-use tracing::{debug, error, warn};
+use tracing::{debug, error};
 
 /// Standard API response wrapper used by external Otterly APIs.
 #[derive(Deserialize)]
 pub struct ApiResponse<T> {
     /// The actual data contained in the response.
     pub data: T,
-}
-
-/// Checks if the external API is responsive using a health check URL.
-///
-/// # Errors
-///
-/// Returns an error message if the API cannot be reached or returns a non-success status code.
-pub async fn check_api_health() -> Result<(), String> {
-    let client = reqwest::Client::new();
-    let health_url = api_health_check_url();
-    let resp = client
-        .get(health_url)
-        .send()
-        .await
-        .map_err(|e| format!("API Health Check failed: {}", e))?;
-
-    if !resp.status().is_success() {
-        return Err(format!("API Health Check returned error {}", resp.status()));
-    }
-
-    debug!("API Health Check successful for {}", health_url);
-    Ok(())
 }
 
 /// Generic helper to fetch data from an external API and extract the 'data' field.
@@ -53,11 +30,6 @@ pub async fn fetch_api_data<T>(url: &str, description: &str) -> Result<T, String
 where
     T: for<'de> Deserialize<'de>,
 {
-    // Check health before proceeding
-    if let Err(e) = check_api_health().await {
-        warn!("API health check failed: {}. Attempting fetch anyway.", e);
-    }
-
     debug!("Fetching {}: {}", description, url);
     let client = reqwest::Client::new();
     let resp = client

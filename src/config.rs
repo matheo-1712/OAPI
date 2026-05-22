@@ -15,8 +15,56 @@ use std::sync::OnceLock;
 pub struct Config {
     /// External API endpoints (full URLs).
     pub external_apis: ExternalApis,
+    /// Monitoring settings for external services.
+    pub monitoring: MonitoringConfig,
     /// Server settings including internal routes.
     pub server: ServerConfig,
+}
+
+/// Monitoring configuration for external services.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MonitoringConfig {
+    /// Discord bot services.
+    pub discord: Option<Vec<DiscordServiceConfig>>,
+    /// Minecraft server services.
+    pub minecraft: Option<Vec<MinecraftServiceConfig>>,
+    /// Website services.
+    pub site: Option<Vec<HttpServiceConfig>>,
+    /// API services.
+    pub api: Option<Vec<HttpServiceConfig>>,
+    /// Self-hosted services.
+    pub self_hosted: Option<Vec<HttpServiceConfig>>,
+    /// Generic HTTP services.
+    pub http: Option<Vec<HttpServiceConfig>>,
+}
+
+/// Configuration for a generic HTTP-based service check.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct HttpServiceConfig {
+    /// Name of the service.
+    pub name: String,
+    /// URL to check.
+    pub url: String,
+}
+
+/// Configuration for a Discord bot service check.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct DiscordServiceConfig {
+    /// Name of the bot.
+    pub name: String,
+    /// Health check URL.
+    pub url: String,
+}
+
+/// Configuration for a Minecraft server check.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct MinecraftServiceConfig {
+    /// Name of the server.
+    pub name: String,
+    /// Hostname or IP.
+    pub host: String,
+    /// Port number.
+    pub port: u16,
 }
 
 /// Full URLs for external API interactions.
@@ -26,8 +74,6 @@ pub struct ExternalApis {
     pub discord_user: String,
     /// Full URL for fetching Discord user statistics.
     pub discord_stats: String,
-    /// Optional health check URL (e.g., base API URL).
-    pub health_check: String,
 }
 
 /// Server settings and internal route paths.
@@ -48,6 +94,8 @@ pub struct InternalRoutes {
     pub base: String,
     /// Path for generating a Discord summary image.
     pub discord_summary: String,
+    /// Path for the monitoring status endpoint.
+    pub monitoring: String,
 }
 
 /// Static storage for the global configuration to ensure it's loaded only once.
@@ -130,10 +178,12 @@ server:
     base: "/api"
     generate_image: "/img"
     discord_summary: "/discord"
+    monitoring: "/monitoring"
 external_apis:
   discord_user: "http://user"
   discord_stats: "http://stats"
-  health_check: "http://health"
+monitoring:
+  discord: []
 "#;
         let default_path = "test_default_config.yaml";
         fs::write(default_path, test_default).unwrap();
@@ -153,7 +203,21 @@ external_apis:
 
     #[test]
     fn test_config_override() {
-        let test_default = "server:\n  port: 8080\n  host: \"127.0.0.1\"\n  routes:\n    base: \"/\"\n    generate_image: \"/\"\n    discord_summary: \"/\"\nexternal_apis:\n  discord_user: \"\"\n  discord_stats: \"\"\n  health_check: \"\"\n";
+        let test_default = r#"
+server:
+  port: 8080
+  host: "127.0.0.1"
+  routes:
+    base: "/"
+    generate_image: "/"
+    discord_summary: "/"
+    monitoring: "/monitoring"
+external_apis:
+  discord_user: ""
+  discord_stats: ""
+monitoring:
+  discord: []
+"#;
         let test_override = "server:\n  port: 9090\n";
 
         fs::write("t_default.yaml", test_default).unwrap();

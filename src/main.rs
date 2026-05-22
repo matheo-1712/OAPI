@@ -19,7 +19,11 @@ use utoipa_swagger_ui::SwaggerUi;
 
 #[derive(OpenApi)]
 #[openapi(
-    paths(handlers::discord_handler::create_discord_summary_by_id),
+    paths(
+        handlers::discord_handler::create_discord_summary_by_id,
+        handlers::monitoring_handler::get_monitoring_status,
+        handlers::monitoring_handler::check_single_service
+    ),
     components(schemas(
         models::ImageRequest,
         models::ImageResponse,
@@ -27,7 +31,15 @@ use utoipa_swagger_ui::SwaggerUi;
         models::DiscordRole,
         models::DiscordStats,
         models::DiscordChannel,
-        models::DiscordVoiceConnection
+        models::DiscordVoiceConnection,
+        models::monitoring::MonitoringResponse,
+        models::monitoring::ServiceResult,
+        models::monitoring::ServiceStatus,
+        models::monitoring::ServiceMetadata,
+        models::monitoring::DiscordBotMetadata,
+        models::monitoring::DiscordBotUptime,
+        models::monitoring::DiscordBotDiscordData,
+        models::monitoring::MinecraftMetadata
     ))
 )]
 struct ApiDoc;
@@ -101,6 +113,8 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
             };
 
             format!("{}{}", base, final_dynamic)
+        } else if path.contains("monitoring") {
+            format!("{}{}", base, config.server.routes.monitoring)
         } else {
             path.clone()
         };

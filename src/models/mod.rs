@@ -1,5 +1,6 @@
-pub mod common;
-pub mod discord;
+mod common;
+mod discord;
+pub mod monitoring;
 
 pub use common::*;
 pub use discord::*;
