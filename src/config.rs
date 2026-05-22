@@ -178,10 +178,12 @@ server:
     base: "/api"
     generate_image: "/img"
     discord_summary: "/discord"
+    monitoring: "/monitoring"
 external_apis:
   discord_user: "http://user"
   discord_stats: "http://stats"
-  health_check: "http://health"
+monitoring:
+  discord: []
 "#;
         let default_path = "test_default_config.yaml";
         fs::write(default_path, test_default).unwrap();
@@ -201,7 +203,21 @@ external_apis:
 
     #[test]
     fn test_config_override() {
-        let test_default = "server:\n  port: 8080\n  host: \"127.0.0.1\"\n  routes:\n    base: \"/\"\n    generate_image: \"/\"\n    discord_summary: \"/\"\nexternal_apis:\n  discord_user: \"\"\n  discord_stats: \"\"\n  health_check: \"\"\n";
+        let test_default = r#"
+server:
+  port: 8080
+  host: "127.0.0.1"
+  routes:
+    base: "/"
+    generate_image: "/"
+    discord_summary: "/"
+    monitoring: "/monitoring"
+external_apis:
+  discord_user: ""
+  discord_stats: ""
+monitoring:
+  discord: []
+"#;
         let test_override = "server:\n  port: 9090\n";
 
         fs::write("t_default.yaml", test_default).unwrap();
