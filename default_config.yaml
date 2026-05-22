@@ -5,8 +5,50 @@ server:
     base: "/api"
     generate_image: "/images"
     discord_summary: "/discord-summary/:id"
+    monitoring: "/monitoring"
 
 external_apis:
   discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
   discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
-  health_check: "https://otterlyapi.antredesloutres.fr/"
+
+monitoring:
+  discord:
+    - name: "Arisoutre"
+      url: "https://arisoutre.antredesloutres.fr/healthcheck"
+    - name: "Mineotter"
+      url: "https://mineotter.antredesloutres.fr/healthcheck"
+    - name: "Mateloutre"
+      url: "https://mateloutre.antredesloutres.fr/healthcheck"
+    - name: "Multiloutre"
+      url: "https://multiloutre.antredesloutres.fr/healthcheck"
+
+  minecraft:
+    - name: "La Vanilla"
+      host: "antredesloutres.fr"
+      port: 25565
+    - name: "Île de berk"
+      host: "antredesloutres.fr"
+      port: 25564
+    - name: "Ottergames"
+      host: "antredesloutres.fr"
+      port: 25599
+
+  api:
+    - name: "OtterlyApi"
+      url: "https://otterlyapi.antredesloutres.fr"
+
+  self_hosted:
+    - name: "Pocketbase"
+      url: "https://pocketbase.antredesloutres.fr/api/health"
+    - name: "Portainer"
+      url: "https://portainer.antredesloutres.fr"
+    - name: "Nginx proxy manager"
+      url: "https://nginx.antredesloutres.fr"
+    - name: "Wikijs"
+      url: "https://wiki.antredesloutres.fr"
+
+  site:
+    - name: "Astroloutre"
+      url: "https://antredesloutres.fr"
+
+  http: []

@@ -1,0 +1,223 @@
+<!DOCTYPE html>
+<html lang="fr" class="dark">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAPI - Status Dashboard</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Inter', sans-serif; }
+        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); }
+        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
+        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
+        .service-card { transition: all 0.3s ease; }
+    </style>
+</head>
+<body class="bg-slate-950 text-slate-200 min-h-screen">
+    <div class="max-w-6xl mx-auto px-4 py-12">
+        <!-- Header -->
+        <div class="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6">
+            <div>
+                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">Service Status</h1>
+                <p class="text-slate-400">Monitoring en temps réel de l'infrastructure Antre des Loutres.</p>
+            </div>
+            <div class="flex items-center gap-4 glass rounded-2xl px-6 py-3 border border-slate-800">
+                <div id="refresh-indicator" class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></div>
+                <span class="text-sm font-medium text-slate-300" id="last-update">Initialisation...</span>
+            </div>
+        </div>
+
+        <!-- Dashboard Grid -->
+        <div id="status-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Initial static loading state -->
+            <div class="col-span-full text-center py-20 text-slate-500 italic">Chargement de la configuration...</div>
+        </div>
+
+        <!-- Footer -->
+        <div class="mt-16 text-center text-slate-500 text-sm">
+            <p>&copy; 2026 OAPI - Otter API System</p>
+        </div>
+    </div>
+
+    <script>
+        const API_URL = '/api/monitoring';
+        const grid = document.getElementById('status-grid');
+        const lastUpdate = document.getElementById('last-update');
+        const refreshIndicator = document.getElementById('refresh-indicator');
+
+        let globalServicesList = null;
+
+        async function initDashboard() {
+            try {
+                // Étape 1 : Récupérer la liste complète des services configurés
+                const response = await fetch(API_URL);
+                const data = await response.json();
+                globalServicesList = data.services;
+                
+                // Étape 2 : Rendu immédiat de TOUTE la structure (catégories + cartes vides)
+                renderInitialStructure(data.services);
+                
+                // Étape 3 : Lancer les checks individuels pour remplir les cartes
+                fetchAllServicesIndividually(data.services);
+                
+            } catch (error) {
+                grid.innerHTML = `<div class="col-span-full text-center py-20 text-rose-500">Erreur lors de l'initialisation du dashboard.</div>`;
+            }
+        }
+
+        function renderInitialStructure(services) {
+            const grouped = groupServices(services);
+            let html = '';
+            for (const [type, typeServices] of Object.entries(grouped)) {
+                const config = { color: 'text-slate-400' };
+                html += `
+                    <div class="col-span-full mt-12 mb-6 first:mt-0">
+                        <div class="flex items-center gap-4">
+                            <h2 class="text-xl font-black ${config.color} uppercase tracking-[0.2em]">${type}</h2>
+                            <div class="h-px bg-slate-800/50 flex-grow ml-4"></div>
+                            <span class="text-xs font-medium text-slate-600">${typeServices.length} service(s)</span>
+                        </div>
+                    </div>
+                `;
+                html += typeServices.map(s => `
+                    <div id="service-${safeId(s.name)}" class="service-card glass border border-slate-800 rounded-3xl p-6">
+                        <div class="flex justify-between items-start mb-4">
+                            <div>
+                                <h3 class="font-bold text-lg text-white mb-1">${s.name}</h3>
+                                <span class="text-xs font-mono uppercase tracking-widest text-slate-500">${s.type_name}</span>
+                            </div>
+                            <div id="status-badge-${safeId(s.name)}" class="flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-slate-900/50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                                <div class="w-1.5 h-1.5 rounded-full bg-slate-700 pulse"></div>
+                                EN ATTENTE
+                            </div>
+                        </div>
+                        <div class="flex items-center gap-2 text-sm text-slate-500">
+                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
+                            </svg>
+                            <span id="latency-${safeId(s.name)}">-- ms</span>
+                        </div>
+                        <div id="meta-${safeId(s.name)}" class="mt-4 pt-4 border-t border-slate-800/50 opacity-50 italic text-xs text-slate-600">
+                            Récupération des données...
+                        </div>
+                    </div>
+                `).join('');
+            }
+            grid.innerHTML = html;
+        }
+
+        async function fetchAllServicesIndividually(services) {
+            refreshIndicator.classList.add('pulse');
+            lastUpdate.textContent = `Actualisation...`;
+            
+            const promises = services.map(s => fetchSingleService(s));
+            await Promise.all(promises);
+            
+            refreshIndicator.classList.remove('pulse');
+            lastUpdate.textContent = `Mise à jour : ${new Date().toLocaleTimeString('fr-FR')}`;
+        }
+
+        async function fetchSingleService(service) {
+            const cardId = safeId(service.name);
+            const badge = document.getElementById(`status-badge-${cardId}`);
+            const latency = document.getElementById(`latency-${cardId}`);
+            const meta = document.getElementById(`meta-${cardId}`);
+            const card = document.getElementById(`service-${cardId}`);
+
+            try {
+                const url = `${API_URL}/check/${service.type_name}/${encodeURIComponent(service.name)}`;
+                const response = await fetch(url);
+                if (!response.ok) throw new Error('Failed');
+                const result = await response.json();
+                
+                updateUI(card, badge, latency, meta, result);
+            } catch (error) {
+                updateUI(card, badge, latency, meta, { ...service, status: 'DOWN', error: 'Service injoignable' });
+            }
+        }
+
+        function updateUI(card, badge, latency, meta, result) {
+            const isUp = result.status === 'UP';
+            
+            // Update Badge
+            const statusColor = isUp ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
+            const statusDot = isUp ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-rose-500 shadow-[0_0_8px_#ef4444]';
+            
+            badge.className = `flex items-center gap-2 px-3 py-1 rounded-full border ${statusColor} text-[10px] font-bold uppercase tracking-wider`;
+            badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full ${statusDot}"></div> ${result.status}`;
+            
+            // Update Latency
+            latency.textContent = `${result.response_time_ms || 0} ms`;
+            latency.parentElement.classList.remove('text-slate-500');
+            latency.parentElement.classList.add('text-slate-400');
+
+            // Update Meta
+            let metadataHtml = '';
+            if (isUp && result.metadata) {
+                if (result.type_name === 'discord') {
+                    const m = result.metadata;
+                    metadataHtml = `
+                        <div class="flex items-center gap-3">
+                            <img src="${m.discord.avatar}" class="w-10 h-10 rounded-full border border-slate-700" alt="Avatar">
+                            <div class="text-xs">
+                                <div class="font-semibold text-slate-300">v${m.version}</div>
+                                <div class="text-slate-500">Uptime: ${m.uptime.human}</div>
+                                <div class="text-slate-500">Ping: ${m.discord.ping}ms</div>
+                            </div>
+                        </div>
+                    `;
+                } else if (result.type_name === 'minecraft') {
+                    const m = result.metadata;
+                    const percent = Math.min(100, (m.online_players / m.max_players) * 100);
+                    metadataHtml = `
+                        <div class="flex justify-between text-xs mb-2">
+                            <span class="text-slate-400">Joueurs: ${m.online_players}/${m.max_players}</span>
+                            <span class="text-slate-300 font-medium">${Math.round(percent)}%</span>
+                        </div>
+                        <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
+                            <div class="bg-indigo-500 h-full rounded-full" style="width: ${percent}%"></div>
+                        </div>
+                    `;
+                }
+            } else if (!isUp && result.error) {
+                metadataHtml = `<span class="text-rose-400/70">${result.error}</span>`;
+            } else {
+                metadataHtml = `<span class="text-slate-500">Aucune donnée additionnelle</span>`;
+            }
+            
+            meta.innerHTML = metadataHtml;
+            meta.className = "mt-4 pt-4 border-t border-slate-800/50 text-xs";
+            meta.classList.remove('opacity-50', 'italic', 'text-slate-600');
+            
+            // Card Hover
+            card.classList.add('hover:scale-[1.02]', 'hover:border-slate-700');
+        }
+
+        function groupServices(services) {
+            return services.reduce((acc, service) => {
+                if (!acc[service.type_name]) acc[service.type_name] = [];
+                acc[service.type_name].push(service);
+                return acc;
+            }, {});
+        }
+
+        function safeId(name) {
+            return name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+        }
+
+        async function startRefreshLoop() {
+            while (true) {
+                await new Promise(r => setTimeout(r, 30000));
+                if (globalServicesList) {
+                    await fetchAllServicesIndividually(globalServicesList);
+                }
+            }
+        }
+
+        initDashboard().then(() => {
+            startRefreshLoop();
+        });
+    </script>
+</body>
+</html>

@@ -8,12 +8,6 @@ use crate::config::Config;
 // ──────────────────────────────────────────────
 //  External APIs Endpoints
 // ──────────────────────────────────────────────
-
-/// Returns the health check URL from the global configuration.
-pub fn api_health_check_url() -> &'static str {
-    &Config::global().external_apis.health_check
-}
-
 /// Returns the full URL for fetching a Discord user's information.
 pub fn discord_user_url() -> &'static str {
     &Config::global().external_apis.discord_user
@@ -35,7 +29,14 @@ mod tests {
             external_apis: ExternalApis {
                 discord_user: "http://user".to_string(),
                 discord_stats: "http://stats".to_string(),
-                health_check: "http://health".to_string(),
+            },
+            monitoring: crate::config::MonitoringConfig {
+                discord: None,
+                minecraft: None,
+                site: None,
+                api: None,
+                self_hosted: None,
+                http: None,
             },
             server: ServerConfig {
                 host: "127.0.0.1".to_string(),
@@ -43,13 +44,12 @@ mod tests {
                 routes: InternalRoutes {
                     base: "/api".to_string(),
                     discord_summary: "/discord".to_string(),
+                    monitoring: "/monitoring".to_string(),
                 },
             },
         };
 
         let _ = CONFIG.set(mock_config);
-
-        assert_eq!(api_health_check_url(), "http://health");
         assert_eq!(discord_user_url(), "http://user");
         assert_eq!(discord_stats_url(), "http://stats");
     }
