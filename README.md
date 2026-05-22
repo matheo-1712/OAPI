@@ -1,109 +1,123 @@
-# OAPI - Otter API
+# 🦦 OAPI — Otter API System
 
-OAPI est une API Rust qui contient l'ensemble de la logique de l'Antre des loutres
+[![CI/CD Pipeline](https://github.com/matheo-1712/OAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/matheo-1712/OAPI/actions)
+[![Rust](https://img.shields.io/badge/rust-v1.81+-orange.svg)](https://www.rust-lang.org)
+[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
+[![Built with Axum](https://img.shields.io/badge/built%20with-Axum-blue)](https://github.com/tokio-rs/axum)
 
-## 🚀 Architecture du Projet
+**OAPI** is a high-performance, asynchronous orchestration API built with Rust. It serves as the backbone logic for the *Antre des Loutres* community, handling complex image generation, real-time infrastructure monitoring, and external API integration.
 
-Le projet suit une architecture modulaire et scalable, séparant strictement les responsabilités :
+---
 
-- **`src/config.rs`** : Gestion de la configuration hiérarchique (YAML).
-- **`src/models/`** : Structures de données (DTOs).
-- **`src/routes/`** : Routage de l'API.
-- **`src/handlers/`** : Extraction des données HTTP et délégation aux Actions.
-- **`src/actions/`** : Orchestration des cas d'usage (récupération de données externes, appels aux services).
-- **`src/services/`** : Logique métier pure (génération d'images, calculs).
-- **`src/utils/`** : Utilitaires (fetcher API générique, formateurs, constantes).
+## ✨ Core Features
+
+### 🎨 Dynamic Image Generation
+Generate high-fidelity Discord profile summary cards on-the-fly.
+- **Smart Caching**: Uses SHA-256 state hashing to avoid redundant generation.
+- **Real-time Stats**: Aggregates messaging activity and vocal time into visual components.
+- **Rich Aesthetics**: Custom font rendering and dynamic role-based color pills.
+
+### 📊 Infrastructure Monitoring
+Real-time health tracking for the entire community ecosystem.
+- **Multi-protocol**: Supports HTTP(S) and Minecraft (TCP/SLP) status pings.
+- **Concurrent Checks**: All services are polled in parallel for sub-second response times.
+- **Live Dashboard**: A minimalist, modern web interface included.
+
+### 🔌 Resilient API Integration
+A robust fetching layer designed for high availability.
+- **Fail-safe Parsing**: Gracefully handles `null` or missing fields from external sources.
+- **Unified Schema**: Standardized DTOs for consistent data handling across the stack.
+- **Automatic Documentation**: Fully compliant OpenAPI 3.0 spec generated via `utoipa`.
+
+---
+
+## 🏗 Architecture
+
+OAPI follows a strictly decoupled, layered architecture to ensure maintainability and testability:
+
+| Layer | Responsibility |
+| :--- | :--- |
+| **Handlers** | HTTP entry points, parameter extraction, and status codes. |
+| **Actions** | Use-case orchestration and external data fetching. |
+| **Services** | Pure business logic and computationally intensive tasks. |
+| **Models** | Strictly typed DTOs and OpenAPI schema definitions. |
+| **Utils** | Generic HTTP fetchers, formatters, and global constants. |
 
 ---
 
 ## ⚙️ Configuration
 
-OAPI utilise un système de configuration flexible basé sur des fichiers YAML.
+The system uses a hierarchical YAML configuration management system.
 
-1.  **`default_config.yaml`** : Contient les valeurs par défaut. **Ce fichier est suivi par Git** et ne doit pas être modifié pour des réglages personnels.
-2.  **`config.yaml`** : Utilisé pour vos surcharges locales (URL de test, ports spécifiques, etc.). **Ce fichier est ignoré par Git.**
+1. **`default_config.yaml`**: The source of truth. Contains all default values and mandatory structure. (Committed to Git).
+2. **`config.yaml`**: Local overrides for environment-specific settings (local URLs, secret keys). (Ignored by Git).
 
-### Personnalisation
-Au premier lancement, un fichier `config.yaml` est généré automatiquement s'il n'existe pas. Pour modifier une configuration (ex: l'URL de l'API Otterly), ajoutez-la simplement dans ce fichier :
-
-```yaml
-external_apis:
-  discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
-  discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
-```
-
-*Note : Si un champ est vide ou absent de `config.yaml`, la valeur de `default_config.yaml` est utilisée automatiquement.*
+*On first run, the application automatically generates a `config.yaml` template if it is missing.*
 
 ---
 
-## 📡 Récupération de Données (Fetcher API)
+## 🚀 Getting Started
 
-Le projet inclut un utilitaire robuste pour interagir avec des APIs externes (`src/utils/api_fetch.rs`) :
+### Prerequisites
+- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
+- A terminal with `cargo` access
 
-- **Santé de l'API** : Un test de santé automatique (`Health Check`) est effectué sur l'URL de santé configurée avant chaque requête.
-- **Généricité** : Un fetcher générique permet de désérialiser n'importe quelle réponse API respectant le format standard `{ data: T }`.
-- **Logging** : Toutes les erreurs et réponses brutes sont logguées via `tracing` pour faciliter le debugging.
-
----
-
-## 📚 Documentation Détaillée
-
-Pour plus de détails sur le fonctionnement interne, consultez les guides suivants dans le dossier `docs/` :
-
-- [**Architecture**](./docs/architecture.md) : Comprendre les couches et le flux de données.
-- [**Système de Configuration**](./docs/configuration.md) : Maîtriser les surcharges YAML et ENV.
-- [**Génération d'Images**](./docs/generation_images.md) : Détails sur le moteur graphique et le cache.
-- [**API Fetcher**](./docs/api_fetcher.md) : Utilisation du client HTTP générique.
-- [**Ajouter une API Externe**](./docs/ajouter_api_externe.md) : Guide pas à pas pour l'extension.
-
----
-
-## 📖 Documentation API (Swagger)
-
-L'API est auto-documentée. Une fois le serveur lancé, accédez à :
-👉 `http://localhost:3000/swagger-ui`
-
----
-
-## 🛠 Installation et Lancement
-
-### Prérequis
-- Rust (dernière version stable)
-
-### Lancer le serveur
+### Installation & Run
 ```bash
+# Clone the repository
+git clone https://github.com/matheo-1712/OAPI.git
+cd OAPI
+
+# Run in development mode
 cargo run
 ```
 
+### Accessing the API
+- **Swagger UI**: [http://localhost:3000/swagger-ui](http://localhost:3000/swagger-ui)
+- **Monitoring Dashboard**: [http://localhost:3000/monitoring.html](http://localhost:3000/monitoring.html)
+
 ---
 
-## 🛠 CI/CD et Qualité du Code
+## 🛠 Development & Quality
 
-Ce projet utilise un pipeline **GitHub Actions** pour garantir la qualité du code à chaque modification.
+We maintain a **Zero Warnings Policy**. Every contribution must pass strict CI/CD checks.
 
-### Vérifications automatisées
-- **Formatage** : `cargo fmt --all -- --check`
-- **Linting** : `cargo clippy --all-targets --all-features -- -D warnings`
-- **Tests** : `cargo test --all-features`
-- **Build** : `cargo build --release`
-
-### Exécuter les vérifications localement
-Il est recommandé de lancer ces commandes avant de pousser vos modifications :
+### Pre-commit Workflow
+Before pushing, ensure your code meets the quality standards:
 ```bash
-# Formater le code
+# Format code
 cargo fmt
 
-# Vérifier les lints
+# Check for lints and warnings
 cargo clippy --all-targets --all-features -- -D warnings
 
-# Lancer les tests
-cargo test
+# Run all tests
+cargo test --all-features
 ```
 
-## 🎨 Technologies utilisées
-- **Axum** : Framework web asynchrone.
-- **Config** : Gestion hiérarchique des configurations.
-- **Serde YAML** : Support du format YAML pour la config.
-- **Utoipa** : Documentation OpenAPI automatique.
-- **Image / RustType** : Génération d'images et rendu de texte.
-- **Reqwest** : Client HTTP asynchrone.
+---
+
+## 📚 Documentation
+
+Deep dives into specific modules:
+- [📖 Architecture Overview](./docs/architecture.md)
+- [📡 Monitoring System](./docs/monitoring.md)
+- [🖼 Image Generation Engine](./docs/generation_images.md)
+- [⚙️ Configuration Management](./docs/configuration.md)
+- [🔌 API Integration Guide](./docs/ajouter_api_externe.md)
+
+---
+
+## 🎨 Tech Stack
+- **Axum**: Asynchronous web framework.
+- **Tokio**: Multi-threaded runtime.
+- **Utoipa**: Automatic OpenAPI documentation.
+- **Image-rs**: Native image processing.
+- **Reqwest**: Type-safe HTTP client.
+- **Tracing**: Structured diagnostic logging.
+
+---
+
+<p align="center">
+  Built with ❤️ for the Antre des Loutres community.
+</p>
