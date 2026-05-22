@@ -78,9 +78,12 @@ pub struct DiscordStats {
     /// Date these statistics were recorded.
     pub date_stats: String,
     /// Most active voice channels.
-    pub voice_channels: Vec<DiscordChannel>,
+    #[serde(default)]
+    pub voice_channels: Option<Vec<DiscordChannel>>,
     /// Most active text channels.
-    pub text_channels: Vec<DiscordChannel>,
+    #[serde(default)]
+    pub text_channels: Option<Vec<DiscordChannel>>,
     /// Users most frequently spent time with in voice.
-    pub vocal_with: Vec<DiscordVoiceConnection>,
+    #[serde(default)]
+    pub vocal_with: Option<Vec<DiscordVoiceConnection>>,
 }

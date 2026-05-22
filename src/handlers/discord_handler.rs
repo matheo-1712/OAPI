@@ -8,20 +8,21 @@ use crate::models::ImageResponse;
 use axum::{Json, extract::Path, http::StatusCode};
 use tracing::{error, info};
 
-/// Generates a Discord profile image summary for a specific user ID.
+/// Generates a Discord summary image for a specific user.
 ///
-/// This handler extracts the `id` from the URL path and invokes
-/// the corresponding action to fetch data and generate the image.
+/// This endpoint fetches user data and statistics from external APIs and
+/// generates a high-fidelity profile summary card as a PNG image.
 #[utoipa::path(
     post,
-    path = "/api/discord-summary/{id}",
+    path = "/discord-summary/{id}",
     responses(
         (status = 200, description = "Discord summary image generated successfully", body = ImageResponse),
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("id" = String, Path, description = "User Database ID")
-    )
+        ("id" = String, Path, description = "Unique internal database ID of the user")
+    ),
+    tag = "Discord"
 )]
 pub async fn create_discord_summary_by_id(
     Path(id): Path<String>,

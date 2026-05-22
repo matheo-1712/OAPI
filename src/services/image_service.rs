@@ -236,14 +236,20 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     let mut voice_counts = HashMap::new();
     let mut companion_counts = HashMap::new();
     for stat in &user.stats {
-        for ch in &stat.text_channels {
-            *text_counts.entry(ch.name.clone()).or_insert(0) += 1;
+        if let Some(channels) = &stat.text_channels {
+            for ch in channels {
+                *text_counts.entry(ch.name.clone()).or_insert(0) += 1;
+            }
         }
-        for ch in &stat.voice_channels {
-            *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
+        if let Some(channels) = &stat.voice_channels {
+            for ch in channels {
+                *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
+            }
         }
-        for comp in &stat.vocal_with {
-            *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
+        if let Some(connections) = &stat.vocal_with {
+            for comp in connections {
+                *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
+            }
         }
     }
     let top_text = text_counts

@@ -1,6 +1,6 @@
 use crate::actions::monitoring_actions;
 use crate::config::Config;
-use crate::models::monitoring::MonitoringResponse;
+use crate::models::monitoring::{MonitoringResponse, ServiceResult};
 use axum::Json;
 use axum::extract::Path as AxumPath;
 use axum::http::StatusCode;
@@ -34,7 +34,7 @@ pub async fn get_monitoring_status() -> impl IntoResponse {
         ("name" = String, Path, description = "Service name")
     ),
     responses(
-        (status = 200, description = "Health status of the specific service", body = crate::models::monitoring::ServiceResult),
+        (status = 200, description = "Health status of the specific service", body = ServiceResult),
         (status = 404, description = "Service not found")
     ),
     tag = "Monitoring"
@@ -45,7 +45,7 @@ pub async fn check_single_service(
     let config = &Config::global().monitoring;
 
     // Find the service in the config and await the check
-    let result = match service_type.as_str() {
+    let result: Option<ServiceResult> = match service_type.as_str() {
         "discord" => {
             let s = config
                 .discord

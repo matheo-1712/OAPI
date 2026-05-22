@@ -113,10 +113,20 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
             };
 
             format!("{}{}", base, final_dynamic)
-        } else if path.contains("monitoring") {
+        } else if path.starts_with("/monitoring/check") {
+            format!(
+                "{}{}/check/{{type}}/{{name}}",
+                base, config.server.routes.monitoring
+            )
+        } else if path == "/monitoring" {
             format!("{}{}", base, config.server.routes.monitoring)
         } else {
-            path.clone()
+            // Default: just prefix with base if it doesn't already have it and starts with /
+            if path.starts_with('/') && !path.starts_with(base) {
+                format!("{}{}", base, path)
+            } else {
+                path.clone()
+            }
         };
 
         new_paths = new_paths.path(new_path, item.clone());
