@@ -59,9 +59,9 @@ pub struct DiscordStats {
     /// Internal stat entry ID.
     pub id: i64,
     /// Reference ID to the user.
-    pub id_utilisateur: i64,
+    pub discord_user: String,
     /// Number of messages sent.
-    pub nb_message: i64,
+    pub message_count: i64,
     /// Total time spent in voice channels (as a decimal string or duration).
     pub vocal_time: String,
     /// Date these statistics were recorded.
