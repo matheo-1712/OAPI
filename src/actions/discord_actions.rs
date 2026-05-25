@@ -5,7 +5,7 @@
 
 use crate::models::{DiscordStats, DiscordUser, ImageResponse};
 use crate::services;
-use crate::utils::constants::{DISCORD_USERS_COLLECTION, DISCORD_USER_STATS_COLLECTION};
+use crate::utils::constants::{DISCORD_USER_STATS_COLLECTION, DISCORD_USERS_COLLECTION};
 use crate::utils::pocketbase::PocketbaseClient;
 use tracing::{debug, error};
 
@@ -27,8 +27,11 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let mut user: DiscordUser = pb.get_record(DISCORD_USERS_COLLECTION, id, ()).await?;
 
     // 2. Fetch user stats
-    let filter = format!("discord_user = '{}' || discord_user = '{}'", user.id, user.discord_id);
-    
+    let filter = format!(
+        "discord_user = '{}' || discord_user = '{}'",
+        user.id, user.discord_id
+    );
+
     // On récupère les données en JSON brut pour gérer les types de manière flexible
     let raw_stats: Vec<serde_json::Value> = pb
         .list_records(DISCORD_USER_STATS_COLLECTION, &filter)
@@ -37,16 +40,14 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let mut processed_stats = Vec::new();
     for mut val in raw_stats {
         if let Some(obj) = val.as_object_mut() {
-            // PocketBase peut renvoyer un nombre pour vocal_time, 
+            // PocketBase peut renvoyer un nombre pour vocal_time,
             // on le convertit en String pour correspondre au modèle
-            if let Some(vocal_val) = obj.get("vocal_time") {
-                if vocal_val.is_number() {
-                    let as_string = vocal_val.to_string();
-                    obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
-                }
+            if let Some(vocal_val) = obj.get("vocal_time").filter(|v| v.is_number()) {
+                let as_string = vocal_val.to_string();
+                obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
             }
         }
-        
+
         // Désérialisation finale vers le modèle de l'utilisateur
         match serde_json::from_value::<DiscordStats>(val) {
             Ok(stat) => processed_stats.push(stat),

@@ -76,13 +76,20 @@ impl PocketbaseClient {
         T: for<'de> Deserialize<'de>,
         P: serde::Serialize,
     {
-        let url = format!("{}/api/collections/{}/records/{}", self.base_url, collection, id);
+        let url = format!(
+            "{}/api/collections/{}/records/{}",
+            self.base_url, collection, id
+        );
         self.fetch_with_auth_and_params(url, &format!("record {} from {}", id, collection), params)
             .await
     }
 
     /// Lists records from a collection with custom parameters.
-    pub async fn list_records_with_params<T, P>(&self, collection: &str, params: P) -> Result<Vec<T>, String>
+    pub async fn list_records_with_params<T, P>(
+        &self,
+        collection: &str,
+        params: P,
+    ) -> Result<Vec<T>, String>
     where
         T: for<'de> Deserialize<'de>,
         P: serde::Serialize,
@@ -108,7 +115,12 @@ impl PocketbaseClient {
         self.list_records_with_params(collection, params).await
     }
 
-    async fn fetch_with_auth_and_params<T, P>(&self, url: String, description: &str, params: P) -> Result<T, String>
+    async fn fetch_with_auth_and_params<T, P>(
+        &self,
+        url: String,
+        description: &str,
+        params: P,
+    ) -> Result<T, String>
     where
         T: for<'de> Deserialize<'de>,
         P: serde::Serialize,
@@ -144,8 +156,7 @@ impl PocketbaseClient {
             );
             return Err(format!(
                 "Pocketbase returned error {} for {}",
-                status,
-                description
+                status, description
             ));
         }
 
