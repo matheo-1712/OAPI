@@ -3,11 +3,11 @@
 //! This module handles the fetching of Discord user data and statistics
 //! and coordinates the generation of profile images.
 
-use crate::models::{DiscordUser, ImageResponse};
+use crate::models::{DiscordStats, DiscordUser, ImageResponse};
 use crate::services;
 use crate::utils::constants::{DISCORD_USERS_COLLECTION, DISCORD_USER_STATS_COLLECTION};
 use crate::utils::pocketbase::PocketbaseClient;
-use tracing::debug;
+use tracing::{debug, error};
 
 /// Orchestrates the process of fetching Discord data and generating a summary image.
 pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, String> {
@@ -27,12 +27,36 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let mut user: DiscordUser = pb.get_record(DISCORD_USERS_COLLECTION, id, ()).await?;
 
     // 2. Fetch user stats
-    // Liaison hybride : on cherche les records qui matchent SOIT l'ID interne PocketBase, SOIT le Snowflake Discord.
-    // Cela permet de récupérer les anciennes et les nouvelles lignes de stats.
     let filter = format!("discord_user = '{}' || discord_user = '{}'", user.id, user.discord_id);
-    user.stats = pb
+    
+    // On récupère les données en JSON brut pour gérer les types de manière flexible
+    let raw_stats: Vec<serde_json::Value> = pb
         .list_records(DISCORD_USER_STATS_COLLECTION, &filter)
         .await?;
 
+    let mut processed_stats = Vec::new();
+    for mut val in raw_stats {
+        if let Some(obj) = val.as_object_mut() {
+            // PocketBase peut renvoyer un nombre pour vocal_time, 
+            // on le convertit en String pour correspondre au modèle
+            if let Some(vocal_val) = obj.get("vocal_time") {
+                if vocal_val.is_number() {
+                    let as_string = vocal_val.to_string();
+                    obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
+                }
+            }
+        }
+        
+        // Désérialisation finale vers le modèle de l'utilisateur
+        match serde_json::from_value::<DiscordStats>(val) {
+            Ok(stat) => processed_stats.push(stat),
+            Err(e) => {
+                error!("Failed to parse stat record: {}", e);
+                return Err(format!("Stat parsing error: {}", e));
+            }
+        }
+    }
+
+    user.stats = processed_stats;
     Ok(user)
 }
