@@ -57,7 +57,7 @@ pub struct DiscordVoiceConnection {
 #[derive(Serialize, Deserialize, ToSchema, Clone)]
 pub struct DiscordStats {
     /// Internal stat entry ID.
-    pub id: i64,
+    pub id: String,
     /// Reference ID to the user.
     pub discord_user: String,
     /// Number of messages sent.
