@@ -103,7 +103,7 @@ impl PocketbaseClient {
         if !filter.is_empty() {
             params.insert("filter", filter.to_string());
         }
-        params.insert("perPage", "500".to_string());
+        params.insert("perPage", "100".to_string());
 
         self.list_records_with_params(collection, params).await
     }
@@ -127,19 +127,8 @@ impl PocketbaseClient {
             .await
             .map_err(|e| format!("Failed to fetch {}: {}", description, e))?;
 
-        if !resp.status().is_success() {
-            let status = resp.status();
-            let error_text = resp.text().await.unwrap_or_default();
-            error!(
-                "Pocketbase fetch failed for {} at {}: {} - {}",
-                description, url, status, error_text
-            );
-            return Err(format!(
-                "Pocketbase returned error {} for {}",
-                status,
-                description
-            ));
-        }
+        let final_url = resp.url().to_string();
+        let status = resp.status();
 
         let text = resp
             .text()
@@ -147,6 +136,18 @@ impl PocketbaseClient {
             .map_err(|e| format!("Failed to get {} text: {}", description, e))?;
 
         debug!("Raw {} response: {}", description, text);
+
+        if !status.is_success() {
+            error!(
+                "Pocketbase fetch failed for {} at {}: {} - {}",
+                description, final_url, status, text
+            );
+            return Err(format!(
+                "Pocketbase returned error {} for {}",
+                status,
+                description
+            ));
+        }
 
         let data = serde_json::from_str(&text).map_err(|e| {
             error!(
