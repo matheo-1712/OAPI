@@ -61,8 +61,8 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
     let mut hasher = Sha256::new();
 
     // Core identity
-    hasher.update(user.pseudo_discord.as_bytes());
-    hasher.update(user.tag_discord.as_bytes());
+    hasher.update(user.username.as_bytes());
+    hasher.update(user.discord_tag.as_bytes());
     if let Some(avatar) = &user.avatar_url {
         hasher.update(avatar.as_bytes());
     }
@@ -109,14 +109,14 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     if file_path.exists() {
         debug!(
             "Cache hit: Image for user {} already exists at {}",
-            user.pseudo_discord, user_hash
+            user.username, user_hash
         );
         return ImageResponse { url: public_url };
     }
 
     debug!(
         "Cache miss: Generating new profile image for user: {}",
-        user.pseudo_discord
+        user.username
     );
 
     // Ensure ONLY ONE image per user by clearing their specific directory on cache miss
@@ -184,7 +184,7 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     }
 
     // --- IDENTITY ---
-    let pseudo_truncated = formatters::truncate_text(&user.pseudo_discord, 15);
+    let pseudo_truncated = formatters::truncate_text(&user.username, 15);
     draw_text_centered_rgba(
         &mut img,
         &font,
@@ -197,14 +197,14 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     draw_text_centered_rgba(
         &mut img,
         &font,
-        &user.tag_discord.to_string(),
+        &user.discord_tag.to_string(),
         150,
         325,
         Scale::uniform(22.0),
         gray_label,
     );
 
-    let formatted_join = formatters::format_discord_date(&user.join_date_discord);
+    let formatted_join = formatters::format_discord_date(&user.joined_at);
     draw_text_centered_rgba(
         &mut img,
         &font,
@@ -556,15 +556,15 @@ mod tests {
     #[test]
     fn test_calculate_user_hash() {
         let user1 = DiscordUser {
-            id: 1,
+            id: "fsf".to_string(),
             discord_id: "123".to_string(),
-            pseudo_discord: "User1".to_string(),
-            tag_discord: "1234".to_string(),
+            username: "User1".to_string(),
+            discord_tag: "1234".to_string(),
             avatar_url: Some("http://example.com/avatar.png".to_string()),
-            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
-            first_activity: None,
-            last_activity: None,
-            delete_date: None,
+            joined_at: "2023-01-01T00:00:00Z".to_string(),
+            first_active_at: None,
+            last_active_at: None,
+            delete_at: None,
             roles: vec![DiscordRole {
                 id: "1".to_string(),
                 name: "Admin".to_string(),
@@ -574,15 +574,15 @@ mod tests {
         };
 
         let user2 = DiscordUser {
-            id: 1,
+            id: "fsfs".to_string(),
             discord_id: "123".to_string(),
-            pseudo_discord: "User1".to_string(),
-            tag_discord: "1234".to_string(),
+            username: "User1".to_string(),
+            discord_tag: "1234".to_string(),
             avatar_url: Some("http://example.com/avatar.png".to_string()),
-            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
-            first_activity: None,
-            last_activity: None,
-            delete_date: None,
+            joined_at: "2023-01-01T00:00:00Z".to_string(),
+            first_active_at: None,
+            last_active_at: None,
+            delete_at: None,
             roles: vec![DiscordRole {
                 id: "1".to_string(),
                 name: "Admin".to_string(),
@@ -592,7 +592,7 @@ mod tests {
         };
 
         let user3 = DiscordUser {
-            pseudo_discord: "User2".to_string(),
+            username: "User2".to_string(),
             ..user1.clone()
         };
 
