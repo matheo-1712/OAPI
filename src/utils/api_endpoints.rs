@@ -39,6 +39,7 @@ mod tests {
                 http: None,
             },
             server: ServerConfig {
+                env: "development".to_string(),
                 host: "127.0.0.1".to_string(),
                 port: 3000,
                 routes: InternalRoutes {
@@ -46,6 +47,11 @@ mod tests {
                     discord_summary: "/discord".to_string(),
                     monitoring: "/monitoring".to_string(),
                 },
+            },
+            auth: crate::config::AuthConfig {
+                pb_email: "test@example.com".to_string(),
+                pb_password: "password".to_string(),
+                pb_url: "http://localhost:8090".to_string(),
             },
         };
 

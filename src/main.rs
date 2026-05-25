@@ -46,17 +46,30 @@ struct ApiDoc;
 
 #[tokio::main]
 async fn main() {
-    // Initialize config
-    config::init();
+    // Load environment variables from .env file
+    dotenvy::dotenv().ok();
+
+    // Determine environment (default to development)
+    let env = std::env::var("OAPI_ENV").unwrap_or_else(|_| "development".to_string());
+
+    // Determine default log level based on environment
+    let default_log_level = if env == "production" {
+        "info"
+    } else {
+        "info,OAPI=debug,tower_http=debug"
+    };
 
     // Initialize tracing
     tracing_subscriber::fmt()
         .with_env_filter(
             tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "info,OAPI=debug,tower_http=debug".into()),
+                .unwrap_or_else(|_| default_log_level.into()),
         )
         .compact()
         .init();
+
+    // Initialize config
+    config::init();
 
     let banner = r#"
   ____               ____    ___ 

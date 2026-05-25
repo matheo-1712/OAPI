@@ -19,6 +19,19 @@ pub struct Config {
     pub monitoring: MonitoringConfig,
     /// Server settings including internal routes.
     pub server: ServerConfig,
+    /// Sensitive authentication and database settings (from environment only).
+    pub auth: AuthConfig,
+}
+
+/// Sensitive authentication settings.
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct AuthConfig {
+    /// Pocketbase Email.
+    pub pb_email: String,
+    /// Pocketbase Password.
+    pub pb_password: String,
+    /// Pocketbase URL.
+    pub pb_url: String,
 }
 
 /// Monitoring configuration for external services.
@@ -79,6 +92,8 @@ pub struct ExternalApis {
 /// Server settings and internal route paths.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ServerConfig {
+    /// Environment mode (development/production).
+    pub env: String,
     /// Host to bind the server to.
     pub host: String,
     /// Port to bind the server to.
@@ -102,20 +117,49 @@ pub struct InternalRoutes {
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
 impl Config {
-    /// Loads the configuration from the hierarchical sources.
-    ///
-    /// # Errors
-    ///
-    /// Returns a [`ConfigError`] if the mandatory `default_config.yaml` is missing or invalid.
+    /// Loads the configuration from the hierarchical sources and environment.
     pub fn load() -> Result<Self, ConfigError> {
-        let s = ConfigTrait::builder()
-            // Start with default configuration (Required)
-            .add_source(File::new("default_config.yaml", FileFormat::Yaml))
-            // Layer on the local configuration (Optional)
-            .add_source(File::new("config.yaml", FileFormat::Yaml).required(false))
-            .build()?;
+        Self::load_from("default_config.yaml", Some("config.yaml"))
+    }
 
-        s.try_deserialize()
+    /// Internal helper to load config from specific files (useful for testing).
+    fn load_from(default_path: &str, override_path: Option<&str>) -> Result<Self, ConfigError> {
+        // 1. Load YAML configuration (non-sensitive)
+        let mut builder =
+            ConfigTrait::builder().add_source(File::new(default_path, FileFormat::Yaml));
+
+        if let Some(path) = override_path {
+            builder = builder.add_source(File::new(path, FileFormat::Yaml).required(false));
+        }
+
+        let yaml_config = builder.build()?;
+
+        // Temporary structure to deserialize YAML parts only
+        #[derive(Debug, Deserialize)]
+        struct YamlParts {
+            external_apis: ExternalApis,
+            monitoring: MonitoringConfig,
+            server: ServerConfig,
+        }
+
+        let parts: YamlParts = yaml_config.try_deserialize()?;
+
+        // 2. Load Auth configuration from Environment ONLY
+        let pb_email = std::env::var("PB_EMAIL").unwrap_or_default();
+        let pb_password = std::env::var("PB_PASSWORD").unwrap_or_default();
+        let pb_url =
+            std::env::var("PB_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+
+        Ok(Config {
+            external_apis: parts.external_apis,
+            monitoring: parts.monitoring,
+            server: parts.server,
+            auth: AuthConfig {
+                pb_email,
+                pb_password,
+                pb_url,
+            },
+        })
     }
 
     /// Provides a global reference to the loaded configuration.
@@ -174,6 +218,7 @@ mod tests {
         // Create a temporary default_config.yaml for testing
         let test_default = r#"
 server:
+  env: "development"
   host: "127.0.0.1"
   port: 8080
   routes:
@@ -190,12 +235,7 @@ monitoring:
         let default_path = "test_default_config.yaml";
         fs::write(default_path, test_default).unwrap();
 
-        let s = ConfigTrait::builder()
-            .add_source(File::new(default_path, FileFormat::Yaml))
-            .build()
-            .unwrap();
-
-        let config: Config = s.try_deserialize().unwrap();
+        let config = Config::load_from(default_path, None).unwrap();
 
         assert_eq!(config.server.port, 8080);
         assert_eq!(config.external_apis.discord_user, "http://user");
@@ -207,6 +247,7 @@ monitoring:
     fn test_config_override() {
         let test_default = r#"
 server:
+  env: "development"
   port: 8080
   host: "127.0.0.1"
   routes:
@@ -225,13 +266,7 @@ monitoring:
         fs::write("t_default.yaml", test_default).unwrap();
         fs::write("t_override.yaml", test_override).unwrap();
 
-        let s = ConfigTrait::builder()
-            .add_source(File::new("t_default.yaml", FileFormat::Yaml))
-            .add_source(File::new("t_override.yaml", FileFormat::Yaml))
-            .build()
-            .unwrap();
-
-        let config: Config = s.try_deserialize().unwrap();
+        let config = Config::load_from("t_default.yaml", Some("t_override.yaml")).unwrap();
 
         assert_eq!(config.server.port, 9090); // Overridden
         assert_eq!(config.server.host, "127.0.0.1"); // Kept from default

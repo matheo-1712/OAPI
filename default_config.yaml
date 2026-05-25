@@ -1,4 +1,5 @@
 server:
+  env: "development"
   host: "127.0.0.1"
   port: 3000
   routes:
@@ -19,8 +20,6 @@ monitoring:
       url: "https://mineotter.antredesloutres.fr/healthcheck"
     - name: "Mateloutre"
       url: "https://mateloutre.antredesloutres.fr/healthcheck"
-    - name: "Multiloutre"
-      url: "https://multiloutre.antredesloutres.fr/healthcheck"
 
   minecraft:
     - name: "La Vanilla"
