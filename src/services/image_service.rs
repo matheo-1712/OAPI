@@ -68,15 +68,19 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
     }
 
     // Aggregated stats that affect the image
-    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
-    hasher.update(total_messages.to_be_bytes());
-
-    let total_vocal_decimal: f64 = user
-        .stats
-        .iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
-        .sum();
-    hasher.update(total_vocal_decimal.to_bits().to_be_bytes());
+    for stat in &user.stats {
+        hasher.update(stat.message_count.to_be_bytes());
+        hasher.update(stat.vocal_time.to_bits().to_be_bytes());
+        for ch in &stat.voice_channels {
+            hasher.update(ch.name.as_bytes());
+        }
+        for ch in &stat.text_channels {
+            hasher.update(ch.name.as_bytes());
+        }
+        for comp in &stat.vocal_with {
+            hasher.update(comp.username.as_bytes());
+        }
+    }
 
     // Roles (affect color and pills)
     for role in &user.roles {
@@ -225,31 +229,21 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     );
 
     // --- DATA PROCESSING ---
-    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
-    let total_vocal_decimal: f64 = user
-        .stats
-        .iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
-        .sum();
+    let total_messages: u32 = user.stats.iter().map(|s| s.message_count).sum();
+    let total_vocal_decimal: f64 = user.stats.iter().map(|s| s.vocal_time).sum();
 
     let mut text_counts = HashMap::new();
     let mut voice_counts = HashMap::new();
     let mut companion_counts = HashMap::new();
     for stat in &user.stats {
-        if let Some(channels) = &stat.text_channels {
-            for ch in channels {
-                *text_counts.entry(ch.name.clone()).or_insert(0) += 1;
-            }
+        for ch in &stat.text_channels {
+            *text_counts.entry(ch.name.clone()).or_insert(0) += 1;
         }
-        if let Some(channels) = &stat.voice_channels {
-            for ch in channels {
-                *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
-            }
+        for ch in &stat.voice_channels {
+            *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
         }
-        if let Some(connections) = &stat.vocal_with {
-            for comp in connections {
-                *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
-            }
+        for comp in &stat.vocal_with {
+            *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
         }
     }
     let top_text = text_counts
@@ -571,6 +565,7 @@ mod tests {
                 color: "#FF0000".to_string(),
             }],
             stats: vec![],
+            expand: None,
         };
 
         let user2 = DiscordUser {
@@ -589,6 +584,7 @@ mod tests {
                 color: "#FF0000".to_string(),
             }],
             stats: vec![],
+            expand: None,
         };
 
         let user3 = DiscordUser {

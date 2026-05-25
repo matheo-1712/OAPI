@@ -8,10 +8,6 @@ server:
     discord_summary: "/discord-summary/:id"
     monitoring: "/monitoring"
 
-external_apis:
-  discord_user: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord"
-  discord_stats: "https://otterlyapi.antredesloutres.fr/api/utilisateurs_discord/stats"
-
 monitoring:
   discord:
     - name: "Arisoutre"
