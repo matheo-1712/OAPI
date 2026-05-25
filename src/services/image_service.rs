@@ -291,13 +291,14 @@ fn draw_text_centered_rgba(img: &mut RgbaImage, font: &Font, text: &str, center_
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{DiscordRole, DiscordStats, DiscordUser};
+    use crate::models::{DiscordRole, DiscordUser, DiscordStats};
 
     #[test]
     fn test_parse_hex_color() {
         assert_eq!(parse_hex_color("#FF0000"), Rgba([255, 0, 0, 255]));
         assert_eq!(parse_hex_color("#00FF00"), Rgba([0, 255, 0, 255]));
         assert_eq!(parse_hex_color("#0000FF"), Rgba([0, 0, 255, 255]));
+        // Default color for invalid hex
         assert_eq!(parse_hex_color("invalid"), Rgba(COLOR_ACCENT_BLURPLE));
     }
 

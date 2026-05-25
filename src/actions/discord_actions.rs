@@ -23,12 +23,13 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let mut pb = PocketbaseClient::new();
     pb.login().await?;
 
-    // 1. Fetch user info (using PocketBase internal ID)
+    // 1. Fetch user info
     let mut user: DiscordUser = pb.get_record(DISCORD_USERS_COLLECTION, id, ()).await?;
 
-    // 2. Fetch user stats (filtering by the 'discord_user' field)
-    // Based on the model, we filter stats using the discord_id (Snowflake)
-    let filter = format!("discord_user = '{}'", user.discord_id);
+    // 2. Fetch user stats
+    // Liaison hybride : on cherche les records qui matchent SOIT l'ID interne PocketBase, SOIT le Snowflake Discord.
+    // Cela permet de récupérer les anciennes et les nouvelles lignes de stats.
+    let filter = format!("discord_user = '{}' || discord_user = '{}'", user.id, user.discord_id);
     user.stats = pb
         .list_records(DISCORD_USER_STATS_COLLECTION, &filter)
         .await?;
