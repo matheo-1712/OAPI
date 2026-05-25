@@ -119,18 +119,15 @@ pub static CONFIG: OnceLock<Config> = OnceLock::new();
 impl Config {
     /// Loads the configuration from the hierarchical sources and environment.
     pub fn load() -> Result<Self, ConfigError> {
-        Self::load_from(
-            "default_config.yaml",
-            Some("config.yaml"),
-        )
+        Self::load_from("default_config.yaml", Some("config.yaml"))
     }
 
     /// Internal helper to load config from specific files (useful for testing).
     fn load_from(default_path: &str, override_path: Option<&str>) -> Result<Self, ConfigError> {
         // 1. Load YAML configuration (non-sensitive)
-        let mut builder = ConfigTrait::builder()
-            .add_source(File::new(default_path, FileFormat::Yaml));
-        
+        let mut builder =
+            ConfigTrait::builder().add_source(File::new(default_path, FileFormat::Yaml));
+
         if let Some(path) = override_path {
             builder = builder.add_source(File::new(path, FileFormat::Yaml).required(false));
         }
@@ -150,7 +147,8 @@ impl Config {
         // 2. Load Auth configuration from Environment ONLY
         let pb_email = std::env::var("PB_EMAIL").unwrap_or_default();
         let pb_password = std::env::var("PB_PASSWORD").unwrap_or_default();
-        let pb_url = std::env::var("PB_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+        let pb_url =
+            std::env::var("PB_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
 
         Ok(Config {
             external_apis: parts.external_apis,
