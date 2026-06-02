@@ -9,30 +9,19 @@ use utoipa::ToSchema;
 /// Represents a Discord user and their aggregated state.
 #[derive(Serialize, Deserialize, ToSchema, Clone)]
 pub struct DiscordUser {
-    /// Internal database ID.
-    pub id: i64,
-    /// Unique Discord snowflake ID.
+    pub id: String,
+    pub username: String,
     pub discord_id: String,
-    /// Discord username.
-    pub pseudo_discord: String,
-    /// Date the user joined the Discord server.
-    pub join_date_discord: String,
-    /// Date of the user's first recorded activity.
-    pub first_activity: Option<String>,
-    /// Date of the user's last recorded activity.
-    pub last_activity: Option<String>,
-    /// Discord user tag (e.g., #1234).
-    pub tag_discord: String,
-    /// URL to the user's Discord avatar.
+    pub discord_tag: String,
     pub avatar_url: Option<String>,
-    /// List of roles assigned to the user on the server.
+    pub joined_at: String,
+    pub first_active_at: Option<String>,
+    pub last_active_at: Option<String>,
+    pub delete_at: Option<String>,
     #[serde(default)]
     pub roles: Vec<DiscordRole>,
-    /// Aggregated activity statistics for the user.
     #[serde(default)]
     pub stats: Vec<DiscordStats>,
-    /// Date the user was deleted/left (if applicable).
-    pub delete_date: Option<String>,
 }
 
 /// Represents a Discord role.
@@ -68,11 +57,11 @@ pub struct DiscordVoiceConnection {
 #[derive(Serialize, Deserialize, ToSchema, Clone)]
 pub struct DiscordStats {
     /// Internal stat entry ID.
-    pub id: i64,
+    pub id: String,
     /// Reference ID to the user.
-    pub id_utilisateur: i64,
+    pub discord_user: String,
     /// Number of messages sent.
-    pub nb_message: i64,
+    pub message_count: i64,
     /// Total time spent in voice channels (as a decimal string or duration).
     pub vocal_time: String,
     /// Date these statistics were recorded.
@@ -86,4 +75,32 @@ pub struct DiscordStats {
     /// Users most frequently spent time with in voice.
     #[serde(default)]
     pub vocal_with: Option<Vec<DiscordVoiceConnection>>,
+    #[serde(default)]
+    pub badges: Option<Vec<DiscordBadge>>,
+}
+
+/// Represents badges of users
+#[derive(Serialize, Deserialize, ToSchema, Clone)]
+pub struct DiscordBadge {
+    pub id: String,
+    pub discord_user: String,
+    pub badge: String,
+    pub badge_info: BadgeInfo,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Clone)]
+pub struct BadgeInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub obtention_method: String,
+    #[serde(default)]
+    pub plateform: String,
+    #[serde(default)]
+    pub is_enabled: bool,
+    pub image: String,
+    #[serde(rename = "collectionName", default)]
+    pub collection_name: String,
 }

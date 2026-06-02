@@ -13,8 +13,6 @@ use std::sync::OnceLock;
 /// Global configuration structure.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct Config {
-    /// External API endpoints (full URLs).
-    pub external_apis: ExternalApis,
     /// Monitoring settings for external services.
     pub monitoring: MonitoringConfig,
     /// Server settings including internal routes.
@@ -80,15 +78,6 @@ pub struct MinecraftServiceConfig {
     pub port: u16,
 }
 
-/// Full URLs for external API interactions.
-#[derive(Debug, Deserialize, Serialize, Clone)]
-pub struct ExternalApis {
-    /// Full URL for fetching Discord user information.
-    pub discord_user: String,
-    /// Full URL for fetching Discord user statistics.
-    pub discord_stats: String,
-}
-
 /// Server settings and internal route paths.
 #[derive(Debug, Deserialize, Serialize, Clone)]
 pub struct ServerConfig {
@@ -137,7 +126,6 @@ impl Config {
         // Temporary structure to deserialize YAML parts only
         #[derive(Debug, Deserialize)]
         struct YamlParts {
-            external_apis: ExternalApis,
             monitoring: MonitoringConfig,
             server: ServerConfig,
         }
@@ -145,13 +133,20 @@ impl Config {
         let parts: YamlParts = yaml_config.try_deserialize()?;
 
         // 2. Load Auth configuration from Environment ONLY
-        let pb_email = std::env::var("PB_EMAIL").unwrap_or_default();
-        let pb_password = std::env::var("PB_PASSWORD").unwrap_or_default();
-        let pb_url =
-            std::env::var("PB_URL").unwrap_or_else(|_| "http://127.0.0.1:8090".to_string());
+        let pb_email = std::env::var("PB_EMAIL")
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let pb_password = std::env::var("PB_PASSWORD")
+            .unwrap_or_default()
+            .trim_matches('"')
+            .to_string();
+        let pb_url = std::env::var("PB_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:8090".to_string())
+            .trim_matches('"')
+            .to_string();
 
         Ok(Config {
-            external_apis: parts.external_apis,
             monitoring: parts.monitoring,
             server: parts.server,
             auth: AuthConfig {
@@ -223,12 +218,8 @@ server:
   port: 8080
   routes:
     base: "/api"
-    generate_image: "/img"
     discord_summary: "/discord"
     monitoring: "/monitoring"
-external_apis:
-  discord_user: "http://user"
-  discord_stats: "http://stats"
 monitoring:
   discord: []
 "#;
@@ -238,7 +229,6 @@ monitoring:
         let config = Config::load_from(default_path, None).unwrap();
 
         assert_eq!(config.server.port, 8080);
-        assert_eq!(config.external_apis.discord_user, "http://user");
 
         fs::remove_file(default_path).unwrap();
     }
@@ -252,12 +242,8 @@ server:
   host: "127.0.0.1"
   routes:
     base: "/"
-    generate_image: "/"
     discord_summary: "/"
     monitoring: "/monitoring"
-external_apis:
-  discord_user: ""
-  discord_stats: ""
 monitoring:
   discord: []
 "#;

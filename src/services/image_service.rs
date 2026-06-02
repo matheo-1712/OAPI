@@ -15,7 +15,6 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::fs;
 use std::path::Path;
-use tracing::debug;
 
 // --- Visual Configuration Constants ---
 const CARD_WIDTH: u32 = 1100;
@@ -54,31 +53,43 @@ fn parse_hex_color(hex: &str) -> Rgba<u8> {
 }
 
 /// Generate a unique SHA-256 hash for the user state to handle caching.
-///
-/// The hash is based on user identity, stats, and roles. If any of these change,
-/// the hash will change, triggering a re-generation of the image.
 fn calculate_user_hash(user: &DiscordUser) -> String {
     let mut hasher = Sha256::new();
 
-    // Core identity
-    hasher.update(user.pseudo_discord.as_bytes());
-    hasher.update(user.tag_discord.as_bytes());
+    hasher.update(user.username.as_bytes());
+    hasher.update(user.discord_tag.as_bytes());
     if let Some(avatar) = &user.avatar_url {
         hasher.update(avatar.as_bytes());
     }
 
-    // Aggregated stats that affect the image
-    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
-    hasher.update(total_messages.to_be_bytes());
+    for stat in &user.stats {
+        hasher.update(stat.message_count.to_be_bytes());
+        hasher.update(stat.vocal_time.as_bytes());
 
-    let total_vocal_decimal: f64 = user
-        .stats
-        .iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
-        .sum();
-    hasher.update(total_vocal_decimal.to_bits().to_be_bytes());
+        if let Some(channels) = &stat.voice_channels {
+            for ch in channels {
+                hasher.update(ch.name.as_bytes());
+            }
+        }
+        if let Some(channels) = &stat.text_channels {
+            for ch in channels {
+                hasher.update(ch.name.as_bytes());
+            }
+        }
+        if let Some(vocal_with) = &stat.vocal_with {
+            for comp in vocal_with {
+                hasher.update(comp.username.as_bytes());
+            }
+        }
 
-    // Roles (affect color and pills)
+        if let Some(badges) = &stat.badges {
+            for badge in badges {
+                hasher.update(badge.id.as_bytes());
+                hasher.update(badge.badge_info.image.as_bytes());
+            }
+        }
+    }
+
     for role in &user.roles {
         hasher.update(role.name.as_bytes());
         hasher.update(role.color.as_bytes());
@@ -87,16 +98,11 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
     format!("{:x}", hasher.finalize())
 }
 
-/// Service for generating a Discord profile image summary with hashing cache.
-///
-/// This function aggregates Discord statistics, processes the user avatar,
-/// and draws a high-fidelity summary card. It uses a caching mechanism based
-/// on the user's data state hash to avoid redundant generation.
+/// Service for generating a Discord profile image summary.
 pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     let user_dir = Path::new(paths::DISCORD_SUMMARY_DIR).join(&user.discord_id);
     let _ = fs::create_dir_all(&user_dir);
 
-    // 1. Calculate unique hash for current user data state
     let user_hash = calculate_user_hash(&user);
     let file_name = format!("{}.png", user_hash);
     let file_path = user_dir.join(&file_name);
@@ -105,28 +111,10 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         user.discord_id, file_name
     );
 
-    // 2. Cache Check: If image with this hash exists, return it immediately
     if file_path.exists() {
-        debug!(
-            "Cache hit: Image for user {} already exists at {}",
-            user.pseudo_discord, user_hash
-        );
         return ImageResponse { url: public_url };
     }
 
-    debug!(
-        "Cache miss: Generating new profile image for user: {}",
-        user.pseudo_discord
-    );
-
-    // Ensure ONLY ONE image per user by clearing their specific directory on cache miss
-    if let Ok(entries) = fs::read_dir(&user_dir) {
-        for entry in entries.flatten() {
-            let _ = fs::remove_file(entry.path());
-        }
-    }
-
-    // 3. Generation (if not in cache)
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
     let bg_deep = Rgba(COLOR_BG_DEEP);
     let sidebar_bg = Rgba(COLOR_SIDEBAR_BG);
@@ -138,7 +126,6 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         *pixel = bg_deep;
     }
 
-    // --- SIDEBAR ---
     for x in 0..SIDEBAR_WIDTH {
         for y in 0..CARD_HEIGHT {
             img.put_pixel(x, y, sidebar_bg);
@@ -155,13 +142,16 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
 
     let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
 
-    // --- AVATAR ---
     if let Some(avatar_url) = user.avatar_url {
         let client = reqwest::Client::new();
-        if let Ok(resp) = client.get(avatar_url).send().await
-            && let Ok(bytes) = resp.bytes().await
-            && let Ok(avatar_img) = image::load_from_memory(&bytes)
-        {
+        let avatar_result = async {
+            let resp = client.get(avatar_url).send().await.ok()?;
+            let bytes = resp.bytes().await.ok()?;
+            image::load_from_memory(&bytes).ok()
+        }
+        .await;
+
+        if let Some(avatar_img) = avatar_result {
             let mut avatar = avatar_img
                 .resize_exact(200, 200, FilterType::Lanczos3)
                 .to_rgba8();
@@ -183,8 +173,93 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         }
     }
 
-    // --- IDENTITY ---
-    let pseudo_truncated = formatters::truncate_text(&user.pseudo_discord, 15);
+    // --- DRAW BADGES ---
+    let mut all_badges = Vec::new();
+    for stat in &user.stats {
+        if let Some(badges) = &stat.badges {
+            all_badges.extend(badges.clone());
+        }
+    }
+    all_badges.truncate(3);
+    tracing::debug!("Image generator received {} badges", all_badges.len());
+
+    if !all_badges.is_empty() {
+        let client = reqwest::Client::new();
+        let badge_size = 64;
+        let badge_margin = 12;
+        let total_w =
+            (all_badges.len() as i32 * badge_size) + ((all_badges.len() as i32 - 1) * badge_margin);
+        let mut bx = 150 - (total_w / 2);
+
+        // Vertical centering between "Member since" (y=405) and bottom (y=650)
+        // Space available = 650 - 405 = 245. Middle is at 405 + 122 = 527.
+        // We subtract half the badge size (32) to truly center it: 527 - 32 = 495.
+        let by = 495;
+
+        for badge in all_badges {
+            let img_url = if badge.badge_info.image.starts_with("http") {
+                badge.badge_info.image.clone()
+            } else {
+                let collection = if badge.badge_info.collection_name.is_empty() {
+                    crate::utils::constants::BADGES_COLLECTION
+                } else {
+                    &badge.badge_info.collection_name
+                };
+                format!(
+                    "{}/api/files/{}/{}/{}",
+                    crate::config::Config::global().auth.pb_url,
+                    collection,
+                    badge.badge_info.id,
+                    badge.badge_info.image
+                )
+            };
+
+            let badge_img_result = async {
+                let resp = client
+                    .get(&img_url)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to fetch badge image from {}: {}", img_url, e);
+                        e
+                    })
+                    .ok()?;
+                let bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to get badge bytes from {}: {}", img_url, e);
+                        e
+                    })
+                    .ok()?;
+                image::load_from_memory(&bytes)
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to load badge image from memory for {}: {}",
+                            img_url,
+                            e
+                        );
+                        e
+                    })
+                    .ok()
+            }
+            .await;
+
+            if let Some(badge_img) = badge_img_result {
+                tracing::debug!("Successfully loaded badge image: {}", img_url);
+                let badge_rgba = badge_img
+                    .resize_exact(badge_size as u32, badge_size as u32, FilterType::Lanczos3)
+                    .to_rgba8();
+
+                image::imageops::overlay(&mut img, &badge_rgba, bx as i64, by as i64);
+            } else {
+                tracing::warn!("Badge image could not be loaded: {}", img_url);
+            }
+            bx += badge_size + badge_margin;
+        }
+    }
+
+    let pseudo_truncated = formatters::truncate_text(&user.username, 15);
     draw_text_centered_rgba(
         &mut img,
         &font,
@@ -197,14 +272,14 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     draw_text_centered_rgba(
         &mut img,
         &font,
-        &user.tag_discord.to_string(),
+        &user.discord_tag,
         150,
         325,
         Scale::uniform(22.0),
         gray_label,
     );
 
-    let formatted_join = formatters::format_discord_date(&user.join_date_discord);
+    let formatted_join = formatters::format_discord_date(&user.joined_at);
     draw_text_centered_rgba(
         &mut img,
         &font,
@@ -225,11 +300,11 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     );
 
     // --- DATA PROCESSING ---
-    let total_messages: i64 = user.stats.iter().map(|s| s.nb_message).sum();
+    let total_messages: i64 = user.stats.iter().map(|s| s.message_count).sum();
     let total_vocal_decimal: f64 = user
         .stats
         .iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or(0.0))
+        .map(|s| s.vocal_time.parse::<f64>().unwrap_or_default())
         .sum();
 
     let mut text_counts = HashMap::new();
@@ -246,8 +321,8 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
                 *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
             }
         }
-        if let Some(connections) = &stat.vocal_with {
-            for comp in connections {
+        if let Some(vocal_with) = &stat.vocal_with {
+            for comp in vocal_with {
                 *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
             }
         }
@@ -277,7 +352,6 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         .take(8)
         .collect();
 
-    // --- STATS GRID ---
     let grid_x = 350;
     let grid_y = 60;
     let card_w = 340;
@@ -344,7 +418,6 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         &font,
     );
 
-    // --- ROLES SECTION ---
     let roles_label_y = grid_y + 300 + card_h + 30;
     draw_text_rgba(
         &mut img,
@@ -368,8 +441,23 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         }
     }
 
+    // --- Clean up old images for this user to keep only the latest one ---
+    cleanup_user_directory(&user_dir);
+
     let _ = img.save(&file_path);
     ImageResponse { url: public_url }
+}
+
+/// Removes all files in the specified directory.
+fn cleanup_user_directory(user_dir: &Path) {
+    if let Ok(entries) = fs::read_dir(user_dir) {
+        for entry in entries.flatten() {
+            let path = entry.path();
+            if path.is_file() {
+                let _ = fs::remove_file(path);
+            }
+        }
+    }
 }
 
 fn draw_stat_card(img: &mut RgbaImage, rect: Rect, label: &str, val: &str, font: &Font) {
@@ -437,7 +525,6 @@ fn draw_pill_high_fidelity(
             };
             let cy = radius;
             let dist = ((dx as f32 - cx).powi(2) + (dy as f32 - cy).powi(2)).sqrt();
-
             if dist <= radius {
                 let current_pixel = img.get_pixel(px as u32, py as u32);
                 let mut target_color = inner_bg;
@@ -542,7 +629,7 @@ fn draw_text_centered_rgba(
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::models::{DiscordRole, DiscordUser};
+    use crate::models::{DiscordRole, DiscordStats, DiscordUser};
 
     #[test]
     fn test_parse_hex_color() {
@@ -556,47 +643,56 @@ mod tests {
     #[test]
     fn test_calculate_user_hash() {
         let user1 = DiscordUser {
-            id: 1,
+            id: "fsf".to_string(),
             discord_id: "123".to_string(),
-            pseudo_discord: "User1".to_string(),
-            tag_discord: "1234".to_string(),
+            username: "User1".to_string(),
+            discord_tag: "1234".to_string(),
             avatar_url: Some("http://example.com/avatar.png".to_string()),
-            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
-            first_activity: None,
-            last_activity: None,
-            delete_date: None,
+            joined_at: "2023-01-01T00:00:00Z".to_string(),
+            first_active_at: None,
+            last_active_at: None,
+            delete_at: None,
             roles: vec![DiscordRole {
                 id: "1".to_string(),
                 name: "Admin".to_string(),
                 color: "#FF0000".to_string(),
             }],
-            stats: vec![],
-        };
-
-        let user2 = DiscordUser {
-            id: 1,
-            discord_id: "123".to_string(),
-            pseudo_discord: "User1".to_string(),
-            tag_discord: "1234".to_string(),
-            avatar_url: Some("http://example.com/avatar.png".to_string()),
-            join_date_discord: "2023-01-01T00:00:00Z".to_string(),
-            first_activity: None,
-            last_activity: None,
-            delete_date: None,
-            roles: vec![DiscordRole {
+            stats: vec![DiscordStats {
                 id: "1".to_string(),
-                name: "Admin".to_string(),
-                color: "#FF0000".to_string(),
+                discord_user: "123".to_string(),
+                message_count: 10,
+                vocal_time: "10.5".to_string(),
+                date_stats: "2023-01-01".to_string(),
+                voice_channels: None,
+                text_channels: None,
+                vocal_with: None,
+                badges: None,
             }],
-            stats: vec![],
         };
-
-        let user3 = DiscordUser {
-            pseudo_discord: "User2".to_string(),
-            ..user1.clone()
-        };
-
+        let user2 = user1.clone();
         assert_eq!(calculate_user_hash(&user1), calculate_user_hash(&user2));
-        assert_ne!(calculate_user_hash(&user1), calculate_user_hash(&user3));
+    }
+
+    #[test]
+    fn test_cleanup_user_directory() {
+        let test_dir = Path::new("test_cleanup_dir");
+        let _ = fs::create_dir_all(test_dir);
+
+        // Create dummy files
+        let file1 = test_dir.join("file1.png");
+        let file2 = test_dir.join("file2.png");
+        fs::write(&file1, "dummy").unwrap();
+        fs::write(&file2, "dummy").unwrap();
+
+        assert!(file1.exists());
+        assert!(file2.exists());
+
+        cleanup_user_directory(test_dir);
+
+        assert!(!file1.exists());
+        assert!(!file2.exists());
+
+        // Cleanup the test directory
+        let _ = fs::remove_dir(test_dir);
     }
 }
