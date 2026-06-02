@@ -31,6 +31,8 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
         "discord_user = '{}' || discord_user = '{}'",
         user.id, user.discord_id
     );
+    
+    // TODO : Fetch Badges
 
     // On récupère les données en JSON brut pour gérer les types de manière flexible
     let raw_stats: Vec<serde_json::Value> = pb

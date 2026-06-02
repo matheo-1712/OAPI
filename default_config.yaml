@@ -18,12 +18,21 @@ monitoring:
       url: "https://mateloutre.antredesloutres.fr/healthcheck"
 
   minecraft:
-    - name: "La Vanilla"
+    - name: "La Vanilla S4"
       host: "antredesloutres.fr"
       port: 25565
     - name: "Île de berk"
       host: "antredesloutres.fr"
       port: 25564
+    - name: "Creatif"
+      host: "antredesloutres.fr"
+      port: 25566
+    - name: "La Vanilla S1"
+      host: "antredesloutres.fr"
+      port: 25567
+    - name: "Serveur de dev"
+      host: "antredesloutres.fr"
+      port: 25569
     - name: "Ottergames"
       host: "antredesloutres.fr"
       port: 25599
