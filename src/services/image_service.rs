@@ -215,18 +215,33 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
             };
 
             let badge_img_result = async {
-                let resp = client.get(&img_url).send().await.map_err(|e| {
-                    tracing::error!("Failed to fetch badge image from {}: {}", img_url, e);
-                    e
-                }).ok()?;
-                let bytes = resp.bytes().await.map_err(|e| {
-                    tracing::error!("Failed to get badge bytes from {}: {}", img_url, e);
-                    e
-                }).ok()?;
-                image::load_from_memory(&bytes).map_err(|e| {
-                    tracing::error!("Failed to load badge image from memory for {}: {}", img_url, e);
-                    e
-                }).ok()
+                let resp = client
+                    .get(&img_url)
+                    .send()
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to fetch badge image from {}: {}", img_url, e);
+                        e
+                    })
+                    .ok()?;
+                let bytes = resp
+                    .bytes()
+                    .await
+                    .map_err(|e| {
+                        tracing::error!("Failed to get badge bytes from {}: {}", img_url, e);
+                        e
+                    })
+                    .ok()?;
+                image::load_from_memory(&bytes)
+                    .map_err(|e| {
+                        tracing::error!(
+                            "Failed to load badge image from memory for {}: {}",
+                            img_url,
+                            e
+                        );
+                        e
+                    })
+                    .ok()
             }
             .await;
 

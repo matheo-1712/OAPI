@@ -35,7 +35,10 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     );
 
     // 3. Fetch Badges (the 3 latest)
-    debug!("Fetching badges from {} with filter: {}", DISCORD_USER_BADGES_COLLECTION, filter);
+    debug!(
+        "Fetching badges from {} with filter: {}",
+        DISCORD_USER_BADGES_COLLECTION, filter
+    );
     let mut badge_params = std::collections::HashMap::new();
     badge_params.insert("filter", filter.clone());
     badge_params.insert("expand", "badge".to_string());
@@ -64,9 +67,12 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
         }
         match serde_json::from_value::<DiscordBadge>(val.clone()) {
             Ok(badge) => {
-                debug!("Successfully processed badge: {} ({})", badge.badge_info.name, badge.badge_info.id);
+                debug!(
+                    "Successfully processed badge: {} ({})",
+                    badge.badge_info.name, badge.badge_info.id
+                );
                 processed_badges.push(badge);
-            },
+            }
             Err(e) => {
                 error!("Failed to deserialize badge: {}. Raw value: {:?}", e, val);
             }
