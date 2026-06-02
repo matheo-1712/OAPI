@@ -14,3 +14,9 @@ pub const LABEL_ROLES_TITLE: &str = "RÔLES LOUTRES";
 // ──────────────────────────────────────────────
 pub const DISCORD_USERS_COLLECTION: &str = "discord_users";
 pub const DISCORD_USER_STATS_COLLECTION: &str = "discord_user_stats";
+
+// ──────────────────────────────────────────────
+//  Badges Collection
+// ──────────────────────────────────────────────
+pub const DISCORD_USER_BADGES_COLLECTION: &str = "badges_earned";
+pub const BADGES_COLLECTION: &str = "badges";

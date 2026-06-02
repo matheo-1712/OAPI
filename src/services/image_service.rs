@@ -81,6 +81,13 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
                 hasher.update(comp.username.as_bytes());
             }
         }
+
+        if let Some(badges) = &stat.badges {
+            for badge in badges {
+                hasher.update(badge.id.as_bytes());
+                hasher.update(badge.badge_info.image.as_bytes());
+            }
+        }
     }
 
     for role in &user.roles {
@@ -163,6 +170,77 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
                 }
             }
             image::imageops::overlay(&mut img, &avatar, 50, 60);
+        }
+    }
+
+    // --- DRAW BADGES ---
+    let mut all_badges = Vec::new();
+    for stat in &user.stats {
+        if let Some(badges) = &stat.badges {
+            all_badges.extend(badges.clone());
+        }
+    }
+    all_badges.truncate(3);
+    tracing::debug!("Image generator received {} badges", all_badges.len());
+
+    if !all_badges.is_empty() {
+        let client = reqwest::Client::new();
+        let badge_size = 64;
+        let badge_margin = 12;
+        let total_w =
+            (all_badges.len() as i32 * badge_size) + ((all_badges.len() as i32 - 1) * badge_margin);
+        let mut bx = 150 - (total_w / 2);
+
+        // Vertical centering between "Member since" (y=405) and bottom (y=650)
+        // Space available = 650 - 405 = 245. Middle is at 405 + 122 = 527.
+        // We subtract half the badge size (32) to truly center it: 527 - 32 = 495.
+        let by = 495;
+
+        for badge in all_badges {
+            let img_url = if badge.badge_info.image.starts_with("http") {
+                badge.badge_info.image.clone()
+            } else {
+                let collection = if badge.badge_info.collection_name.is_empty() {
+                    crate::utils::constants::BADGES_COLLECTION
+                } else {
+                    &badge.badge_info.collection_name
+                };
+                format!(
+                    "{}/api/files/{}/{}/{}",
+                    crate::config::Config::global().auth.pb_url,
+                    collection,
+                    badge.badge_info.id,
+                    badge.badge_info.image
+                )
+            };
+
+            let badge_img_result = async {
+                let resp = client.get(&img_url).send().await.map_err(|e| {
+                    tracing::error!("Failed to fetch badge image from {}: {}", img_url, e);
+                    e
+                }).ok()?;
+                let bytes = resp.bytes().await.map_err(|e| {
+                    tracing::error!("Failed to get badge bytes from {}: {}", img_url, e);
+                    e
+                }).ok()?;
+                image::load_from_memory(&bytes).map_err(|e| {
+                    tracing::error!("Failed to load badge image from memory for {}: {}", img_url, e);
+                    e
+                }).ok()
+            }
+            .await;
+
+            if let Some(badge_img) = badge_img_result {
+                tracing::debug!("Successfully loaded badge image: {}", img_url);
+                let badge_rgba = badge_img
+                    .resize_exact(badge_size as u32, badge_size as u32, FilterType::Lanczos3)
+                    .to_rgba8();
+
+                image::imageops::overlay(&mut img, &badge_rgba, bx as i64, by as i64);
+            } else {
+                tracing::warn!("Badge image could not be loaded: {}", img_url);
+            }
+            bx += badge_size + badge_margin;
         }
     }
 
@@ -573,6 +651,7 @@ mod tests {
                 voice_channels: None,
                 text_channels: None,
                 vocal_with: None,
+                badges: None,
             }],
         };
         let user2 = user1.clone();

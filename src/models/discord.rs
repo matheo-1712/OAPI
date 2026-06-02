@@ -75,4 +75,32 @@ pub struct DiscordStats {
     /// Users most frequently spent time with in voice.
     #[serde(default)]
     pub vocal_with: Option<Vec<DiscordVoiceConnection>>,
+    #[serde(default)]
+    pub badges: Option<Vec<DiscordBadge>>,
+}
+
+/// Represents badges of users
+#[derive(Serialize, Deserialize, ToSchema, Clone)]
+pub struct DiscordBadge {
+    pub id: String,
+    pub discord_user: String,
+    pub badge: String,
+    pub badge_info: BadgeInfo,
+}
+
+#[derive(Serialize, Deserialize, ToSchema, Clone)]
+pub struct BadgeInfo {
+    pub id: String,
+    pub name: String,
+    #[serde(default)]
+    pub description: String,
+    #[serde(default)]
+    pub obtention_method: String,
+    #[serde(default)]
+    pub plateform: String,
+    #[serde(default)]
+    pub is_enabled: bool,
+    pub image: String,
+    #[serde(rename = "collectionName", default)]
+    pub collection_name: String,
 }
