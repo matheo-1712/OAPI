@@ -12,10 +12,10 @@
 ## ✨ Core Features
 
 ### 🎨 Dynamic Image Generation
-Generate high-fidelity Discord profile summary cards on-the-fly.
+Generate high-fidelity profile summary cards for Discord and Minecraft.
 - **Smart Caching**: Uses SHA-256 state hashing to avoid redundant generation.
-- **Real-time Stats**: Aggregates messaging activity and vocal time into visual components.
-- **Rich Aesthetics**: Custom font rendering and dynamic role-based color pills.
+- **Real-time Stats**: Aggregates messaging activity, voice time, and Minecraft gameplay (playtime, distance, blocks).
+- **Rich Aesthetics**: Custom font rendering, dynamic color pills, and automated avatar retrieval (Discord & Minecraft heads).
 
 ### 📊 Infrastructure Monitoring
 Real-time health tracking for the entire community ecosystem.
@@ -23,10 +23,10 @@ Real-time health tracking for the entire community ecosystem.
 - **Concurrent Checks**: All services are polled in parallel for sub-second response times.
 - **Live Dashboard**: A minimalist, modern web interface included.
 
-### 🔌 Resilient API Integration
-A robust fetching layer designed for high availability.
-- **Fail-safe Parsing**: Gracefully handles `null` or missing fields from external sources.
-- **Unified Schema**: Standardized DTOs for consistent data handling across the stack.
+### 🔌 PocketBase Integration
+A robust data layer powered by PocketBase.
+- **Admin Auth**: Secure and automated administrative access to collections.
+- **Exhaustive Fetching**: Custom pagination logic to retrieve complete historical data.
 - **Automatic Documentation**: Fully compliant OpenAPI 3.0 spec generated via `utoipa`.
 
 ---
@@ -100,11 +100,11 @@ cargo test --all-features
 ## 📚 Documentation
 
 Deep dives into specific modules:
-- [📖 Architecture Overview](./docs/architecture.md)
-- [📡 Monitoring System](./docs/monitoring.md)
-- [🖼 Image Generation Engine](./docs/generation_images.md)
-- [⚙️ Configuration Management](./docs/configuration.md)
-- [🔌 API Integration Guide](./docs/ajouter_api_externe.md)
+- [📖 Architecture Overview](./docs/architecture.md) ([EN](./docs/en/architecture.md))
+- [📡 Monitoring System](./docs/monitoring.md) ([EN](./docs/en/monitoring.md))
+- [🖼 Image Generation Engine](./docs/generation_images.md) ([EN](./docs/en/generation_images.md))
+- [⚙️ Configuration Management](./docs/configuration.md) ([EN](./docs/en/configuration.md))
+- [🔌 PocketBase Integration](./docs/pocketbase.md) ([EN](./docs/en/pocketbase.md))
 
 ---
 

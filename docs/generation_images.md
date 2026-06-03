@@ -1,56 +1,43 @@
 # Service de Génération d'Images
 
-Le service de génération d'images (`src/services/image_service.rs`) est responsable de la création dynamique des visuels de profil Discord.
+Le service de génération d'images (`src/services/image_service.rs`) crée dynamiquement des visuels haute fidélité pour les profils Discord et Minecraft.
 
 ---
 
 ## Logique de Caching
 
-Pour optimiser les performances et éviter de redessiner inutilement des images identiques, le service utilise un système de cache basé sur le contenu des données et l'identifiant utilisateur.
+Le service utilise un cache intelligent pour minimiser l'utilisation du CPU et de la bande passante.
 
-1.  **Organisation par Dossier** : Chaque utilisateur possède son propre dossier nommé selon son `discord_id` dans `public/generated_images/discord_summary/{discord_id}/`.
-2.  **Calcul du Hash** : Un hash SHA-256 est calculé à partir de l'état actuel des données de l'utilisateur.
-3.  **Vérification** : Si le fichier `{hash}.png` existe déjà dans le dossier de l'utilisateur, il est renvoyé immédiatement.
-4.  **Génération & Nettoyage** : Si les données ont changé (hash différent), le service **vide le dossier de l'utilisateur** pour ne conserver qu'une seule image (la plus récente) avant de générer la nouvelle.
-
-Cette approche garantit que l'image est toujours à jour tout en évitant l'accumulation de fichiers obsolètes pour un même utilisateur.
+1.  **Organisation** : Les images sont stockées dans `public/generated_images/` dans des sous-dossiers spécifiques (`discord_summary/` ou `minecraft_summary/`) par identifiant unique (`discord_id` ou `account_id`).
+2.  **Hash de Contenu** : Un hash SHA-256 est généré à partir de **toutes les données** du profil (pseudo, statistiques, badges, serveurs).
+3.  **Vérification** : Si le fichier `{hash}.png` existe, il est servi immédiatement.
+4.  **Auto-nettoyage** : Lorsqu'une nouvelle image est générée (données modifiées), le dossier de l'utilisateur est vidé pour ne conserver que la version la plus récente.
 
 ---
 
-## Processus de Dessin
+## Fonctionnalités par Profil
 
-L'image est construite par empilement de couches en utilisant la crate `image` :
+### 1. Résumé Discord
+- **Avatar** : Cercle antialiasé avec bordure.
+- **Stats** : Messages envoyés et Temps vocal.
+- **Spécificités** : Affiche le "Meilleur ami Loutre" (le joueur avec qui vous avez passé le plus de temps en vocal) et vos rôles préférés.
 
-### 1. Fond et Structure
-- Création d'une image vierge RGBA.
-- Remplissage avec les couleurs de fond (Deep BG, Sidebar).
-- Dessin de la barre d'accentuation supérieure.
-
-### 2. Avatar Circulaire
-- Téléchargement de l'avatar via `reqwest`.
-- Redimensionnement et application d'un masque circulaire (calcul de distance par rapport au centre).
-- Ajout d'une bordure blanche antialiasée.
-
-### 3. Typographie
-- Chargement de la police `Arial` incluse dans les binaires via `include_bytes!`.
-- Rendu du texte avec `rusttype` (Centrage automatique, calcul des métriques).
-
-### 4. Grille de Statistiques
-- Dessin de "cartes" de fond pour chaque statistique.
-- Ajout d'un trait d'accentuation coloré sous chaque carte.
-- Affichage des labels et des valeurs.
-
-### 5. Badges de Rôles (Pills)
-- Filtrage des rôles pertinents (contenant "Loutre" ou "Rôle").
-- Dessin de "pilules" à bords arrondis avec :
-    - Fond sombre.
-    - Bordure colorée (extraite de la couleur réelle du rôle Discord).
-    - Texte du rôle.
+### 2. Résumé Minecraft
+- **Avatar** : Tête 3D du joueur (récupérée via son UUID).
+- **Stats** : Playtime, Distance (en blocs), Blocs minés/posés, Morts et Kills.
+- **Spécificités** : Affiche les **3 serveurs préférés** sous forme de badges colorés selon la couleur du serveur dans la base de données.
 
 ---
 
-## Optimisations Techniques
+## Détails Techniques du Dessin
 
-- **Antialiasing Manuel** : Le service calcule manuellement l'alpha des pixels sur les bords des cercles et des pilules pour un rendu lisse.
-- **Dossiers Automatiques** : Le service s'assure que l'arborescence des dossiers de sortie existe avant d'enregistrer.
-- **URLs Publiques** : Le chemin retourné est relatif à la racine du serveur statique d'Axum (`/generated_images/...`).
+- **Moteur** : Utilise les crates `image` (pixels) et `rusttype` (typographie).
+- **Formatage** : Les grands nombres sont formatés avec des espaces (ex: `1 250 000`) pour une lecture optimale.
+- **Pills (Badges)** : Les étiquettes de serveurs ou de rôles gèrent le retour à la ligne automatique pour ne pas dépasser de l'image.
+- **Couleurs** : Support complet des codes HEX pour les bordures et accents.
+
+---
+
+## URLs Publiques
+Les chemins retournés par l'API sont prêts à être utilisés dans un tag `<img>` :
+`/generated_images/minecraft_summary/{uuid}/{hash}.png`
