@@ -48,6 +48,7 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let raw_badges: Vec<serde_json::Value> = pb
         .list_records_with_params(DISCORD_USER_BADGES_COLLECTION, badge_params)
         .await
+        .map(|resp| resp.items)
         .unwrap_or_else(|e| {
             error!("Failed to list badge records: {}", e);
             Vec::new()
@@ -81,9 +82,9 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
 
     debug!("Final processed badges count: {}", processed_badges.len());
 
-    // 4. Fetch user stats
+    // 4. Fetch user stats (using list_all_records to avoid 100-item limit)
     let raw_stats: Vec<serde_json::Value> = pb
-        .list_records(DISCORD_USER_STATS_COLLECTION, &filter)
+        .list_all_records(DISCORD_USER_STATS_COLLECTION, &filter)
         .await?;
 
     let mut processed_stats = Vec::new();
