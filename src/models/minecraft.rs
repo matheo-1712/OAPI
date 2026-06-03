@@ -1,7 +1,7 @@
+use crate::models::BadgeInfo;
 use serde::{Deserialize, Serialize};
 use std::collections::HashMap;
 use utoipa::ToSchema;
-use crate::models::BadgeInfo;
 
 /// Collection : players
 #[derive(Serialize, Deserialize, ToSchema, Clone)]

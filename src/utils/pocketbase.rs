@@ -91,7 +91,11 @@ impl PocketbaseClient {
     }
 
     /// Lists ALL records from a collection by automatically paginating.
-    pub async fn list_all_records<T>(&self, collection: &str, filter: &str) -> Result<Vec<T>, String>
+    pub async fn list_all_records<T>(
+        &self,
+        collection: &str,
+        filter: &str,
+    ) -> Result<Vec<T>, String>
     where
         T: for<'de> Deserialize<'de>,
     {
@@ -106,7 +110,8 @@ impl PocketbaseClient {
             params.insert("page", current_page.to_string());
             params.insert("perPage", "500".to_string()); // PocketBase max is 500
 
-            let response: ListResponse<T> = self.list_records_with_params(collection, params).await?;
+            let response: ListResponse<T> =
+                self.list_records_with_params(collection, params).await?;
 
             debug!(
                 "Fetched page {}/{} from {} (perPage: {}, totalItems: {})",

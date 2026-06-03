@@ -1,7 +1,7 @@
 mod common;
 mod discord;
-pub mod monitoring;
 mod minecraft;
+pub mod monitoring;
 mod server;
 
 pub use common::*;

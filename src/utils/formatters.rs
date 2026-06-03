@@ -56,7 +56,7 @@ pub fn format_number(n: i64) -> String {
     for (i, c) in s.chars().enumerate() {
         result.push(c);
         let remaining = len - i - 1;
-        if remaining > 0 && remaining % 3 == 0 {
+        if remaining > 0 && remaining.is_multiple_of(3) {
             result.push(' ');
         }
     }
@@ -112,7 +112,7 @@ mod tests {
         assert_eq!(format_vocal_time(1.5), "1h 30min");
         assert_eq!(format_vocal_time(0.75), "45min");
         assert_eq!(format_vocal_time(0.01), "36s");
-        assert_eq!(format_vocal_time(10.01), "10h"); 
+        assert_eq!(format_vocal_time(10.01), "10h");
     }
 
     #[test]

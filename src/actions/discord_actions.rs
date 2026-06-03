@@ -20,15 +20,23 @@ pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, Strin
 
 /// Private helper to aggregate Discord user info and stats from PocketBase.
 async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
-    debug!("Action: Fetching Discord data from PocketBase for discord_id: {}", discord_id);
+    debug!(
+        "Action: Fetching Discord data from PocketBase for discord_id: {}",
+        discord_id
+    );
 
     let mut pb = PocketbaseClient::new();
     pb.login().await?;
 
     // 1. Fetch user info by Discord ID
     let user_filter = format!("discord_id = '{}'", discord_id);
-    let users: Vec<DiscordUser> = pb.list_all_records(DISCORD_USERS_COLLECTION, &user_filter).await?;
-    let mut user = users.into_iter().next().ok_or_else(|| format!("User not found with discord_id: {}", discord_id))?;
+    let users: Vec<DiscordUser> = pb
+        .list_all_records(DISCORD_USERS_COLLECTION, &user_filter)
+        .await?;
+    let mut user = users
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("User not found with discord_id: {}", discord_id))?;
 
     // 2. Fetch user stats
     let filter = format!(

@@ -385,9 +385,17 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageRespons
             .cloned()
             .unwrap_or_else(|| "Serveur inconnu".to_string());
         let playtime_secs = playtime_ticks / 20;
-        let pill_text = format!("{}({})", server_name, formatters::format_minecraft_playtime(playtime_secs));
+        let pill_text = format!(
+            "{}({})",
+            server_name,
+            formatters::format_minecraft_playtime(playtime_secs)
+        );
 
-        let hex_color = player.server_colors.get(&server_id).map(|s| s.as_str()).unwrap_or("#5865F2");
+        let hex_color = player
+            .server_colors
+            .get(&server_id)
+            .map(|s| s.as_str())
+            .unwrap_or("#5865F2");
         let color = parse_hex_color(hex_color);
 
         // Calculate expected width (approximate: text length * factor + padding)
