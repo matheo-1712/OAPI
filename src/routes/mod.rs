@@ -4,7 +4,7 @@
 //! internal routing table using configuration values.
 
 use crate::config::Config;
-use crate::handlers::{discord_handler, monitoring_handler};
+use crate::handlers::{discord_handler, minecraft_handler, monitoring_handler};
 use axum::{
     Router,
     routing::{get, post},
@@ -19,6 +19,10 @@ pub fn api_routes() -> Router {
         .route(
             &routes.discord_summary,
             post(discord_handler::create_discord_summary_by_id),
+        )
+        .route(
+            &routes.minecraft_summary,
+            post(minecraft_handler::create_minecraft_summary_by_id),
         )
         .route(
             &routes.monitoring,

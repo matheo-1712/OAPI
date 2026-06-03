@@ -20,7 +20,7 @@ use tracing::{error, info};
         (status = 500, description = "Internal server error")
     ),
     params(
-        ("id" = String, Path, description = "Unique internal database ID of the user")
+        ("id" = String, Path, description = "Discord Snowflake ID of the user")
     ),
     tag = "Discord"
 )]

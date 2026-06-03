@@ -6,6 +6,7 @@ server:
     base: "/api"
     generate_image: "/images"
     discord_summary: "/discord-summary/:id"
+    minecraft_summary: "/minecraft-summary/:id"
     monitoring: "/monitoring"
 
 monitoring:

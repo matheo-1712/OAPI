@@ -98,6 +98,8 @@ pub struct InternalRoutes {
     pub base: String,
     /// Path for generating a Discord summary image.
     pub discord_summary: String,
+    /// Path for generating a Minecraft summary image.
+    pub minecraft_summary: String,
     /// Path for the monitoring status endpoint.
     pub monitoring: String,
 }
@@ -219,6 +221,7 @@ server:
   routes:
     base: "/api"
     discord_summary: "/discord"
+    minecraft_summary: "/minecraft"
     monitoring: "/monitoring"
 monitoring:
   discord: []
@@ -243,6 +246,7 @@ server:
   routes:
     base: "/"
     discord_summary: "/"
+    minecraft_summary: "/m"
     monitoring: "/monitoring"
 monitoring:
   discord: []

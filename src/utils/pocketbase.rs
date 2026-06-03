@@ -75,20 +75,6 @@ impl PocketbaseClient {
         Ok(())
     }
 
-    /// Fetches a single record from a collection by its ID with optional parameters.
-    pub async fn get_record<T, P>(&self, collection: &str, id: &str, params: P) -> Result<T, String>
-    where
-        T: for<'de> Deserialize<'de>,
-        P: serde::Serialize,
-    {
-        let url = format!(
-            "{}/api/collections/{}/records/{}",
-            self.base_url, collection, id
-        );
-        self.fetch_with_auth_and_params(url, &format!("record {} from {}", id, collection), params)
-            .await
-    }
-
     /// Lists records from a collection with custom parameters.
     pub async fn list_records_with_params<T, P>(
         &self,

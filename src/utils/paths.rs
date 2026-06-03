@@ -2,6 +2,7 @@
 //  System Paths
 // ──────────────────────────────────────────────
 pub const DISCORD_SUMMARY_DIR: &str = "public/generated_images/discord_summary";
+pub const MINECRAFT_SUMMARY_DIR: &str = "public/generated_images/minecraft_summary";
 
 #[cfg(test)]
 mod tests {
