@@ -21,6 +21,7 @@ use utoipa_swagger_ui::SwaggerUi;
 #[openapi(
     paths(
         handlers::discord_handler::create_discord_summary_by_id,
+        handlers::minecraft_handler::create_minecraft_summary_by_id,
         handlers::monitoring_handler::get_monitoring_status,
         handlers::monitoring_handler::check_single_service
     ),
@@ -32,6 +33,9 @@ use utoipa_swagger_ui::SwaggerUi;
         models::DiscordStats,
         models::DiscordChannel,
         models::DiscordVoiceConnection,
+        models::MinecraftPlayer,
+        models::MinecraftStats,
+        models::Server,
         models::monitoring::MonitoringResponse,
         models::monitoring::ServiceResult,
         models::monitoring::ServiceStatus,
@@ -119,6 +123,17 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
             let dynamic_path = config.server.routes.discord_summary.replace(":", "{");
 
             // If the parameter in YAML doesn't end with }, add it
+            let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {
+                format!("{}}}", dynamic_path)
+            } else {
+                dynamic_path
+            };
+
+            format!("{}{}", base, final_dynamic)
+        } else if path.contains("minecraft-summary") {
+            // Convert Axum :param to OpenAPI {param}
+            let dynamic_path = config.server.routes.minecraft_summary.replace(":", "{");
+
             let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {
                 format!("{}}}", dynamic_path)
             } else {

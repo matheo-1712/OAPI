@@ -14,7 +14,12 @@ struct AdminAuthResponse {
 
 /// Pocketbase list response for collections.
 #[derive(Deserialize)]
+#[serde(rename_all = "camelCase")]
 pub struct ListResponse<T> {
+    pub page: u32,
+    pub per_page: u32,
+    pub total_pages: u32,
+    pub total_items: u32,
     pub items: Vec<T>,
 }
 
@@ -70,49 +75,67 @@ impl PocketbaseClient {
         Ok(())
     }
 
-    /// Fetches a single record from a collection by its ID with optional parameters.
-    pub async fn get_record<T, P>(&self, collection: &str, id: &str, params: P) -> Result<T, String>
-    where
-        T: for<'de> Deserialize<'de>,
-        P: serde::Serialize,
-    {
-        let url = format!(
-            "{}/api/collections/{}/records/{}",
-            self.base_url, collection, id
-        );
-        self.fetch_with_auth_and_params(url, &format!("record {} from {}", id, collection), params)
-            .await
-    }
-
     /// Lists records from a collection with custom parameters.
     pub async fn list_records_with_params<T, P>(
         &self,
         collection: &str,
         params: P,
-    ) -> Result<Vec<T>, String>
+    ) -> Result<ListResponse<T>, String>
     where
         T: for<'de> Deserialize<'de>,
         P: serde::Serialize,
     {
         let url = format!("{}/api/collections/{}/records", self.base_url, collection);
-        let response: ListResponse<T> = self
-            .fetch_with_auth_and_params(url, &format!("records from {}", collection), params)
-            .await?;
-        Ok(response.items)
+        self.fetch_with_auth_and_params(url, &format!("records from {}", collection), params)
+            .await
     }
 
-    /// Lists records from a collection with an optional filter and default limit.
-    pub async fn list_records<T>(&self, collection: &str, filter: &str) -> Result<Vec<T>, String>
+    /// Lists ALL records from a collection by automatically paginating.
+    pub async fn list_all_records<T>(
+        &self,
+        collection: &str,
+        filter: &str,
+    ) -> Result<Vec<T>, String>
     where
         T: for<'de> Deserialize<'de>,
     {
-        let mut params = std::collections::HashMap::new();
-        if !filter.is_empty() {
-            params.insert("filter", filter.to_string());
-        }
-        params.insert("perPage", "100".to_string());
+        let mut all_items = Vec::new();
+        let mut current_page = 1;
 
-        self.list_records_with_params(collection, params).await
+        loop {
+            let mut params = std::collections::HashMap::new();
+            if !filter.is_empty() {
+                params.insert("filter", filter.to_string());
+            }
+            params.insert("page", current_page.to_string());
+            params.insert("perPage", "500".to_string()); // PocketBase max is 500
+
+            let response: ListResponse<T> =
+                self.list_records_with_params(collection, params).await?;
+
+            debug!(
+                "Fetched page {}/{} from {} (perPage: {}, totalItems: {})",
+                response.page,
+                response.total_pages,
+                collection,
+                response.per_page,
+                response.total_items
+            );
+
+            all_items.extend(response.items);
+
+            if current_page >= response.total_pages || response.total_pages == 0 {
+                break;
+            }
+            current_page += 1;
+        }
+
+        debug!(
+            "Fetched total of {} records from {}",
+            all_items.len(),
+            collection
+        );
+        Ok(all_items)
     }
 
     async fn fetch_with_auth_and_params<T, P>(

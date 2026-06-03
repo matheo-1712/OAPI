@@ -3,10 +3,11 @@
 //! This module handles the creation of dynamic Discord profile summary cards,
 //! including data aggregation, font rendering, and local caching using hashes.
 
-use crate::models::{DiscordUser, ImageResponse};
+use crate::models::{DiscordUser, ImageResponse, MinecraftPlayer};
 use crate::utils::constants::{
-    LABEL_COMPANION, LABEL_MEMBER_SINCE, LABEL_MESSAGES, LABEL_ROLES_TITLE, LABEL_TEXT_CHANNEL,
-    LABEL_VOCAL_TIME, LABEL_VOICE_CHANNEL,
+    LABEL_BLOCKS_MINED, LABEL_BLOCKS_PLACED, LABEL_COMPANION, LABEL_DEATHS, LABEL_MEMBER_SINCE,
+    LABEL_MESSAGES, LABEL_MOB_KILLS, LABEL_PLAYTIME, LABEL_ROLES_TITLE, LABEL_TEXT_CHANNEL,
+    LABEL_TOP_SERVERS, LABEL_TOTAL_DISTANCE, LABEL_VOCAL_TIME, LABEL_VOICE_CHANNEL,
 };
 use crate::utils::{formatters, paths};
 use image::{Rgba, RgbaImage, imageops::FilterType};
@@ -96,6 +97,326 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
     }
 
     format!("{:x}", hasher.finalize())
+}
+
+/// Generate a unique SHA-256 hash for the Minecraft player state.
+fn calculate_minecraft_hash(player: &MinecraftPlayer) -> String {
+    let mut hasher = Sha256::new();
+
+    hasher.update(player.playername.as_bytes());
+    hasher.update(player.platform.as_bytes());
+    hasher.update(player.account_id.as_bytes());
+
+    for stat in &player.stats {
+        hasher.update(stat.server.as_bytes());
+        hasher.update(stat.playtime.to_be_bytes());
+        hasher.update(stat.deaths.to_be_bytes());
+        hasher.update(stat.mob_kills.to_be_bytes());
+        hasher.update(stat.player_kills.to_be_bytes());
+        hasher.update(stat.blocks_mined.to_be_bytes());
+        hasher.update(stat.blocks_placed.to_be_bytes());
+        hasher.update(stat.total_distance.to_be_bytes());
+    }
+
+    format!("{:x}", hasher.finalize())
+}
+
+/// Service for generating a Minecraft profile image summary.
+pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageResponse {
+    let user_dir = Path::new(paths::MINECRAFT_SUMMARY_DIR).join(&player.account_id);
+    let _ = fs::create_dir_all(&user_dir);
+
+    let player_hash = calculate_minecraft_hash(&player);
+    let file_name = format!("{}.png", player_hash);
+    let file_path = user_dir.join(&file_name);
+    let public_url = format!(
+        "/generated_images/minecraft_summary/{}/{}",
+        player.account_id, file_name
+    );
+
+    if file_path.exists() {
+        return ImageResponse { url: public_url };
+    }
+
+    let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
+    let bg_deep = Rgba(COLOR_BG_DEEP);
+    let sidebar_bg = Rgba(COLOR_SIDEBAR_BG);
+    let accent_blurple = Rgba([46, 204, 113, 255]); // Green for Minecraft
+    let white = Rgba(COLOR_WHITE);
+    let gray_label = Rgba(COLOR_GRAY_LABEL);
+
+    for pixel in img.pixels_mut() {
+        *pixel = bg_deep;
+    }
+
+    for x in 0..SIDEBAR_WIDTH {
+        for y in 0..CARD_HEIGHT {
+            img.put_pixel(x, y, sidebar_bg);
+        }
+    }
+    for y in 0..CARD_HEIGHT {
+        img.put_pixel(SIDEBAR_WIDTH, y, Rgba(COLOR_SEPARATOR));
+    }
+    for x in 0..SIDEBAR_WIDTH {
+        for y in 0..6 {
+            img.put_pixel(x, y, accent_blurple);
+        }
+    }
+
+    let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
+
+    // --- DRAW AVATAR (MINECRAFT HEAD) ---
+    let avatar_url = format!("https://mc-heads.net/avatar/{}/200", player.account_id);
+    let client = reqwest::Client::new();
+    let avatar_result = async {
+        let resp = client.get(&avatar_url).send().await.ok()?;
+        let bytes = resp.bytes().await.ok()?;
+        image::load_from_memory(&bytes).ok()
+    }
+    .await;
+
+    if let Some(avatar_img) = avatar_result {
+        let avatar = avatar_img
+            .resize_exact(200, 200, FilterType::Lanczos3)
+            .to_rgba8();
+        image::imageops::overlay(&mut img, &avatar, 50, 60);
+    }
+
+    let pseudo_truncated = formatters::truncate_text(&player.playername, 15);
+    draw_text_centered_rgba(
+        &mut img,
+        &font,
+        &pseudo_truncated,
+        150,
+        280,
+        Scale::uniform(38.0),
+        white,
+    );
+    draw_text_centered_rgba(
+        &mut img,
+        &font,
+        &player.account_id,
+        150,
+        325,
+        Scale::uniform(14.0),
+        gray_label,
+    );
+
+    let formatted_join = formatters::format_discord_date(&player.first_connected_at);
+    draw_text_centered_rgba(
+        &mut img,
+        &font,
+        LABEL_MEMBER_SINCE,
+        150,
+        380,
+        Scale::uniform(14.0),
+        gray_label,
+    );
+    draw_text_centered_rgba(
+        &mut img,
+        &font,
+        &formatted_join,
+        150,
+        405,
+        Scale::uniform(18.0),
+        white,
+    );
+
+    // --- DRAW BADGES ---
+    if let Some(badges) = &player.badges {
+        let badge_size = 64;
+        let badge_margin = 12;
+        let total_w =
+            (badges.len() as i32 * badge_size) + ((badges.len() as i32 - 1) * badge_margin);
+        let mut bx = 150 - (total_w / 2);
+        let by = 495;
+
+        for badge in badges {
+            let img_url = if badge.badge_info.image.starts_with("http") {
+                badge.badge_info.image.clone()
+            } else {
+                let collection = if badge.badge_info.collection_name.is_empty() {
+                    crate::utils::constants::BADGES_COLLECTION
+                } else {
+                    &badge.badge_info.collection_name
+                };
+                format!(
+                    "{}/api/files/{}/{}/{}",
+                    crate::config::Config::global().auth.pb_url,
+                    collection,
+                    badge.badge_info.id,
+                    badge.badge_info.image
+                )
+            };
+
+            let client = reqwest::Client::new();
+            let badge_img_result = async {
+                let resp = client.get(&img_url).send().await.ok()?;
+                let bytes = resp.bytes().await.ok()?;
+                image::load_from_memory(&bytes).ok()
+            }
+            .await;
+
+            if let Some(badge_img) = badge_img_result {
+                let badge_rgba = badge_img
+                    .resize_exact(badge_size as u32, badge_size as u32, FilterType::Lanczos3)
+                    .to_rgba8();
+                image::imageops::overlay(&mut img, &badge_rgba, bx as i64, by as i64);
+            }
+            bx += badge_size + badge_margin;
+        }
+    }
+
+    // --- DATA PROCESSING ---
+    let total_playtime_ticks: i64 = player.stats.iter().map(|s| s.playtime).sum();
+    let total_playtime_secs = total_playtime_ticks / 20;
+
+    let total_blocks_mined: i64 = player.stats.iter().map(|s| s.blocks_mined).sum();
+    let total_blocks_placed: i64 = player.stats.iter().map(|s| s.blocks_placed).sum();
+    let total_mob_kills: i64 = player.stats.iter().map(|s| s.mob_kills).sum();
+    let total_deaths: i64 = player.stats.iter().map(|s| s.deaths).sum();
+    let total_distance: f64 = player.stats.iter().map(|s| s.total_distance).sum();
+
+    let grid_x = 350;
+    let grid_y = 60;
+    let card_w = 340;
+    let card_h = 120;
+
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x,
+            y: grid_y,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_PLAYTIME,
+        &formatters::format_minecraft_playtime(total_playtime_secs),
+        &font,
+    );
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x + 370,
+            y: grid_y,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_TOTAL_DISTANCE,
+        &formatters::format_minecraft_distance(total_distance),
+        &font,
+    );
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x,
+            y: grid_y + 150,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_BLOCKS_MINED,
+        &formatters::format_number(total_blocks_mined),
+        &font,
+    );
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x + 370,
+            y: grid_y + 150,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_BLOCKS_PLACED,
+        &formatters::format_number(total_blocks_placed),
+        &font,
+    );
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x,
+            y: grid_y + 300,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_MOB_KILLS,
+        &formatters::format_number(total_mob_kills),
+        &font,
+    );
+    draw_stat_card(
+        &mut img,
+        Rect {
+            x: grid_x + 370,
+            y: grid_y + 300,
+            w: card_w,
+            h: card_h,
+        },
+        LABEL_DEATHS,
+        &formatters::format_number(total_deaths),
+        &font,
+    );
+
+    // --- TOP SERVERS ---
+    let mut server_playtimes = HashMap::new();
+    for stat in &player.stats {
+        *server_playtimes.entry(stat.server.clone()).or_insert(0) += stat.playtime;
+    }
+
+    let mut top_servers: Vec<_> = server_playtimes.into_iter().collect();
+    top_servers.sort_by_key(|&(_, p)| std::cmp::Reverse(p));
+    let top_3_servers = top_servers.into_iter().take(3);
+
+    let servers_label_y = grid_y + 300 + card_h + 30;
+    draw_text_rgba(
+        &mut img,
+        &font,
+        LABEL_TOP_SERVERS,
+        grid_x as i32,
+        servers_label_y as i32,
+        Scale::uniform(18.0),
+        gray_label,
+    );
+
+    let mut rx = grid_x as i32;
+    let mut ry = servers_label_y as i32 + 35;
+    for (server_id, playtime_ticks) in top_3_servers {
+        let server_name = player
+            .server_names
+            .get(&server_id)
+            .cloned()
+            .unwrap_or_else(|| "Serveur inconnu".to_string());
+        let playtime_secs = playtime_ticks / 20;
+        let pill_text = format!(
+            "{}({})",
+            server_name,
+            formatters::format_minecraft_playtime(playtime_secs)
+        );
+
+        let hex_color = player
+            .server_colors
+            .get(&server_id)
+            .map(|s| s.as_str())
+            .unwrap_or("#5865F2");
+        let color = parse_hex_color(hex_color);
+
+        // Calculate expected width (approximate: text length * factor + padding)
+        let text_len = pill_text.chars().count() as i32 * 11;
+        let pill_width = (text_len + 40).max(120);
+
+        // Wrap if it exceeds the card width (grid_x + card_w*2 + margin)
+        if rx + pill_width > CARD_WIDTH as i32 - 40 {
+            rx = grid_x as i32;
+            ry += 45;
+        }
+
+        let w = draw_pill_high_fidelity(&mut img, rx, ry, &pill_text, &font, color);
+        rx += w + 12;
+    }
+
+    // --- Clean up old images for this player ---
+    cleanup_user_directory(&user_dir);
+
+    let _ = img.save(&file_path);
+    ImageResponse { url: public_url }
 }
 
 /// Service for generating a Discord profile image summary.
@@ -301,11 +622,12 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
 
     // --- DATA PROCESSING ---
     let total_messages: i64 = user.stats.iter().map(|s| s.message_count).sum();
-    let total_vocal_decimal: f64 = user
+    let total_vocal_decimal_raw: f64 = user
         .stats
         .iter()
         .map(|s| s.vocal_time.parse::<f64>().unwrap_or_default())
         .sum();
+    let total_vocal_decimal = total_vocal_decimal_raw / 10.0;
 
     let mut text_counts = HashMap::new();
     let mut voice_counts = HashMap::new();
@@ -366,7 +688,7 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
             h: card_h,
         },
         LABEL_MESSAGES,
-        &total_messages.to_string(),
+        &formatters::format_number(total_messages),
         &font,
     );
     draw_stat_card(

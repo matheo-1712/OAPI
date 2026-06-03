@@ -19,14 +19,24 @@ pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, Strin
 }
 
 /// Private helper to aggregate Discord user info and stats from PocketBase.
-async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
-    debug!("Action: Fetching data from PocketBase for id: {}", id);
+async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
+    debug!(
+        "Action: Fetching Discord data from PocketBase for discord_id: {}",
+        discord_id
+    );
 
     let mut pb = PocketbaseClient::new();
     pb.login().await?;
 
-    // 1. Fetch user info
-    let mut user: DiscordUser = pb.get_record(DISCORD_USERS_COLLECTION, id, ()).await?;
+    // 1. Fetch user info by Discord ID
+    let user_filter = format!("discord_id = '{}'", discord_id);
+    let users: Vec<DiscordUser> = pb
+        .list_all_records(DISCORD_USERS_COLLECTION, &user_filter)
+        .await?;
+    let mut user = users
+        .into_iter()
+        .next()
+        .ok_or_else(|| format!("User not found with discord_id: {}", discord_id))?;
 
     // 2. Fetch user stats
     let filter = format!(
@@ -48,6 +58,7 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
     let raw_badges: Vec<serde_json::Value> = pb
         .list_records_with_params(DISCORD_USER_BADGES_COLLECTION, badge_params)
         .await
+        .map(|resp| resp.items)
         .unwrap_or_else(|e| {
             error!("Failed to list badge records: {}", e);
             Vec::new()
@@ -81,9 +92,9 @@ async fn fetch_discord_data(id: &str) -> Result<DiscordUser, String> {
 
     debug!("Final processed badges count: {}", processed_badges.len());
 
-    // 4. Fetch user stats
+    // 4. Fetch user stats (using list_all_records to avoid 100-item limit)
     let raw_stats: Vec<serde_json::Value> = pb
-        .list_records(DISCORD_USER_STATS_COLLECTION, &filter)
+        .list_all_records(DISCORD_USER_STATS_COLLECTION, &filter)
         .await?;
 
     let mut processed_stats = Vec::new();
