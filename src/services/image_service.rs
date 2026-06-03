@@ -315,7 +315,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageRespons
             h: card_h,
         },
         LABEL_BLOCKS_MINED,
-        &formatters::format_number(total_blocks_mined),
+        &format!("{ } blocs", formatters::format_number(total_blocks_mined)),
         &font,
     );
     draw_stat_card(
@@ -327,7 +327,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageRespons
             h: card_h,
         },
         LABEL_BLOCKS_PLACED,
-        &formatters::format_number(total_blocks_placed),
+        &format!("{ } blocs", formatters::format_number(total_blocks_placed)),
         &font,
     );
     draw_stat_card(
