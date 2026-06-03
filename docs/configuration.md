@@ -1,6 +1,6 @@
 # Guide : Système de Configuration
 
-Le projet OAPI utilise un système de configuration hiérarchique et flexible basé sur la crate `config`. Ce système permet de gérer des valeurs par défaut tout en autorisant des surcharges locales.
+Le projet OAPI utilise un système de configuration hiérarchique et flexible basé sur la crate `config`. Ce système permet de gérer des valeurs par défaut tout en autorisant des surcharges locales et des secrets via l'environnement.
 
 ---
 
@@ -10,43 +10,45 @@ Les sources de configuration sont chargées dans l'ordre suivant (les dernières
 
 1.  **`default_config.yaml`** : Valeurs par défaut du projet. **Ce fichier est suivi par Git.**
 2.  **`config.yaml`** : Surcharges locales spécifiques à l'environnement. **Ce fichier est ignoré par Git.**
+3.  **Variables d'Environnement** : Secrets et paramètres sensibles (ex: `PB_PASSWORD`).
 
 ---
 
 ## 1. Valeurs par Défaut (`default_config.yaml`)
 
-Ce fichier contient la configuration de base nécessaire au fonctionnement de l'application :
+Ce fichier contient la structure obligatoire et les valeurs de base :
 - Paramètres du serveur (host, port).
 - Définition des routes internes de l'API.
-- URLs des APIs externes.
+- Configuration du monitoring (liste des services à surveiller).
 
 ## 2. Surcharges Locales (`config.yaml`)
 
-Au premier lancement de l'application, un fichier `config.yaml` est généré automatiquement s'il n'existe pas. Il contient l'ensemble des champs de `default_config.yaml`, mais tous commentés.
+Au premier lancement, un fichier `config.yaml` est généré automatiquement. Vous pouvez y décommenter des lignes pour modifier la configuration sans toucher au code.
 
-### Comment surcharger une valeur ?
-Ouvrez `config.yaml` et décommentez la section et le champ souhaités. 
+## 3. Secrets (.env)
 
-**Exemple : Modifier le port du serveur**
-```yaml
-server:
-  port: 4000
-```
+Les informations sensibles ne sont **jamais** stockées dans les fichiers YAML. Elles sont lues depuis l'environnement (ou un fichier `.env`) :
+- `PB_EMAIL` : Email de l'administrateur PocketBase.
+- `PB_PASSWORD` : Mot de passe de l'administrateur.
+- `PB_URL` : URL de l'instance PocketBase.
 
 ---
 
 ## Structure des Données
 
-La configuration est structurée en deux blocs principaux :
+La configuration est structurée en trois blocs principaux :
 
 ### `server`
-- `host` : Adresse IP sur laquelle le serveur écoute.
+Gère le serveur Axum et le routage interne.
+- `host` : IP d'écoute.
 - `port` : Port TCP.
-- `routes` :
-    - `base` : Préfixe de toutes les routes API (ex: `/api`).
-    - `discord_summary` : Chemin de l'endpoint de résumé Discord.
+- `routes` : Chemins dynamiques pour les endpoints (ex: `minecraft_summary: "/minecraft-summary/:id"`).
 
-### `external_apis`
-- `discord_user` : URL complète pour récupérer les infos utilisateur.
-- `discord_stats` : URL complète pour récupérer les statistiques.
-- `health_check` : URL utilisée par le fetcher pour vérifier la disponibilité de l'API externe.
+### `monitoring`
+Liste des services à surveiller.
+- `discord` : Bots avec endpoint healthcheck.
+- `minecraft` : Serveurs avec host et port.
+- `api`, `site`, `self_hosted` : Services HTTP simples.
+
+### `auth` (Interne)
+Regroupe les accès PocketBase chargés via l'environnement.

@@ -11,7 +11,7 @@ Responsable du chargement et de la fusion des sources de configuration (YAML, EN
 
 ### 2. Couche des Modèles (`src/models/`)
 Définit les structures de données (DTOs - Data Transfer Objects). Ces structures sont utilisées pour :
-- Désérialiser les réponses des APIs externes.
+- Désérialiser les réponses de PocketBase.
 - Sérialiser les réponses de notre propre API.
 - Générer automatiquement la documentation OpenAPI (Swagger).
 
@@ -27,37 +27,40 @@ Gère l'interface HTTP :
 
 ### 5. Couche des Actions (`src/actions/`)
 **Le cœur de l'orchestration (Cas d'utilisation).** Une action coordonne le flux de données pour répondre à un besoin spécifique :
-- Appels successifs à plusieurs APIs externes via le fetcher.
-- Agrégation et filtrage des données brutes.
-- Appel aux **Services** pour les traitements lourds.
+- Appels à PocketBase via le client utilitaire.
+- Agrégation, filtrage et calculs sur les données brutes.
+- Appel aux **Services** pour les traitements lourds (génération d'images).
 - C'est la couche qui contient la "recette" d'un endpoint.
 
 ### 6. Couche des Services (`src/services/`)
 Contient la logique métier pure et isolée :
-- Traitement d'images (dessin, calculs géométriques).
+- Traitement d'images (dessin, calculs géométriques, redimensionnement).
 - Calculs mathématiques complexes.
 - Cette couche ne sait rien du HTTP ou de la provenance des données.
 
 ### 7. Couche des Utilitaires (`src/utils/`)
 Fonctions transverses réutilisables :
-- `api_fetch.rs` : Client HTTP générique avec Health Check.
-- `api_endpoints.rs` : Gestionnaire dynamique d'URLs.
-- `formatters.rs` : Formatage de dates, textes et durées.
+- `pocketbase.rs` : Client PocketBase avec authentification admin et gestion de la pagination automatique.
+- `formatters.rs` : Formatage de dates, textes, nombres (séparateurs de milliers) et durées.
+- `constants.rs` : Labels UI et noms des collections de base de données.
 
 ---
 
-## Flux d'une requête (Exemple)
+## Flux d'une requête (Exemple Minecraft)
 
-1.  **Client** envoie un `POST` sur `/api/discord-summary/123`.
-2.  **Routeur** redirige vers `discord_handler::create_discord_summary_by_id`.
-3.  **Handler** extrait l'ID `123` et appelle `discord_actions::get_discord_summary_action`.
+1.  **Client** envoie un `POST` sur `/api/minecraft-summary/{uuid}`.
+2.  **Routeur** redirige vers `minecraft_handler::create_minecraft_summary_by_id`.
+3.  **Handler** extrait l'UUID et appelle `minecraft_actions::get_minecraft_summary_action`.
 4.  **Action** :
-    - Récupère l'URL configurée via `api_endpoints`.
-    - Appelle le `fetch_api_data` pour obtenir les infos utilisateur.
-    - Appelle le `fetch_api_data` pour obtenir les stats.
-    - Passe les données agrégées à `image_service::generate_discord_profile`.
+    - S'authentifie sur PocketBase via le `PocketbaseClient`.
+    - Récupère les infos du joueur, ses statistiques (via toutes les pages) et les infos des serveurs.
+    - Agrège les temps de jeu et identifie les serveurs préférés.
+    - Passe les données à `image_service::generate_minecraft_profile`.
 5.  **Service** :
     - Calcule le hash des données pour le cache.
-    - Dessine l'image (si non présente en cache).
+    - Si l'image n'est pas en cache :
+        - Télécharge la tête du joueur.
+        - Dessine l'image (statistiques, badges, serveurs).
+        - Sauvegarde le fichier PNG.
     - Retourne l'URL de l'image.
 6.  **Action** & **Handler** remontent le résultat jusqu'au client au format JSON.
