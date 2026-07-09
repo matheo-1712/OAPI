@@ -60,19 +60,27 @@ pub fn api_routes() -> Router {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use axum::{body::Body, http::{Request, StatusCode}};
-    use tower::ServiceExt;
     use crate::config;
+    use axum::{
+        body::Body,
+        http::{Request, StatusCode},
+    };
+    use tower::ServiceExt;
 
     #[tokio::test]
     async fn test_auth_login_redirect() {
         let _ = dotenvy::dotenv();
         config::init();
-        
+
         let app = api_routes();
 
         let response = app
-            .oneshot(Request::builder().uri("/auth/login").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/auth/login")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -83,11 +91,16 @@ mod tests {
     async fn test_investor_route_rejection() {
         let _ = dotenvy::dotenv();
         config::init();
-        
+
         let app = api_routes();
 
         let response = app
-            .oneshot(Request::builder().uri("/investor/stats").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/investor/stats")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 
@@ -98,11 +111,16 @@ mod tests {
     async fn test_admin_route_rejection() {
         let _ = dotenvy::dotenv();
         config::init();
-        
+
         let app = api_routes();
 
         let response = app
-            .oneshot(Request::builder().uri("/admin/users").body(Body::empty()).unwrap())
+            .oneshot(
+                Request::builder()
+                    .uri("/admin/users")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
             .await
             .unwrap();
 

@@ -5,9 +5,9 @@
 
 use crate::actions::discord_actions;
 use crate::models::ImageResponse;
+use crate::models::{JwtClaims, Role};
 use axum::{Extension, Json, extract::Path, http::StatusCode};
 use tracing::{error, info};
-use crate::models::{JwtClaims, Role};
 
 /// Generates a Discord summary image for a specific user.
 ///
@@ -30,7 +30,10 @@ pub async fn create_discord_summary_by_id(
     Extension(claims): Extension<JwtClaims>,
 ) -> Result<Json<ImageResponse>, (StatusCode, String)> {
     if claims.sub != id && claims.role != Role::Admin {
-        error!("User {} (ID: {}) attempted to generate Discord summary for another user (ID: {})", claims.username, claims.sub, id);
+        error!(
+            "User {} (ID: {}) attempted to generate Discord summary for another user (ID: {})",
+            claims.username, claims.sub, id
+        );
         return Err((
             StatusCode::FORBIDDEN,
             "Vous ne pouvez générer l'image que pour votre propre compte Discord.".to_string(),

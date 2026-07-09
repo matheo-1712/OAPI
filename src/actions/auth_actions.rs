@@ -198,46 +198,63 @@ mod tests {
         let _ = dotenvy::dotenv();
         config::init();
         let config = Config::global();
-        
+
         let claims = JwtClaims {
             sub: "123".to_string(),
             username: "test_user".to_string(),
             role: Role::Normal,
-            exp: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() + 3600) as usize,
-            iat: SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() as usize,
+            exp: (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                + 3600) as usize,
+            iat: SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs() as usize,
         };
-        
+
         let token = encode(
             &Header::default(),
             &claims,
             &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let verified = AuthAction::verify_token(&token);
         assert!(verified.is_some());
         assert_eq!(verified.unwrap().username, "test_user");
     }
-    
+
     #[test]
     fn test_verify_token_expired() {
         let _ = dotenvy::dotenv();
         config::init();
         let config = Config::global();
-        
+
         let claims = JwtClaims {
             sub: "123".to_string(),
             username: "test_user".to_string(),
             role: Role::Normal,
-            exp: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() - 3600) as usize,
-            iat: (SystemTime::now().duration_since(UNIX_EPOCH).unwrap().as_secs() - 7200) as usize,
+            exp: (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                - 3600) as usize,
+            iat: (SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_secs()
+                - 7200) as usize,
         };
-        
+
         let token = encode(
             &Header::default(),
             &claims,
             &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
-        ).unwrap();
-        
+        )
+        .unwrap();
+
         let verified = AuthAction::verify_token(&token);
         assert!(verified.is_none());
     }

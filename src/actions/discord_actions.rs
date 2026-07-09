@@ -105,7 +105,7 @@ async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
             let as_string = vocal_val.to_string();
             obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
         }
-        
+
         match serde_json::from_value::<DiscordStats>(val) {
             Ok(stat) => processed_stats.push(stat),
             Err(e) => {

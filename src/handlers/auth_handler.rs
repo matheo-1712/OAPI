@@ -170,7 +170,7 @@ pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> imp
     let cookie = Cookie::build(("auth_token", "")).path("/").build();
 
     let return_to = safe_return_to(query.return_to);
-    
+
     (jar.remove(cookie), Redirect::to(&return_to))
 }
 
@@ -180,9 +180,15 @@ mod tests {
 
     #[test]
     fn test_safe_return_to_valid() {
-        assert_eq!(safe_return_to(Some("/admin.html".to_string())), "/admin.html");
+        assert_eq!(
+            safe_return_to(Some("/admin.html".to_string())),
+            "/admin.html"
+        );
         assert_eq!(safe_return_to(Some("/".to_string())), "/");
-        assert_eq!(safe_return_to(Some("/api/auth/me".to_string())), "/api/auth/me");
+        assert_eq!(
+            safe_return_to(Some("/api/auth/me".to_string())),
+            "/api/auth/me"
+        );
     }
 
     #[test]
