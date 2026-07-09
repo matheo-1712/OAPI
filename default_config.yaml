@@ -57,3 +57,7 @@ monitoring:
       url: "https://antredesloutres.fr"
 
   http: []
+
+discord_auth:
+  guild_id: ""
+  investor_role_id: "1113865928086655037"

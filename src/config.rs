@@ -19,6 +19,18 @@ pub struct Config {
     pub server: ServerConfig,
     /// Sensitive authentication and database settings (from environment only).
     pub auth: AuthConfig,
+    /// Discord Authentication settings.
+    #[serde(default)]
+    pub discord_auth: DiscordAuthConfig,
+}
+
+/// Discord Authentication Settings (from YAML)
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct DiscordAuthConfig {
+    /// Guild ID to check roles against.
+    pub guild_id: String,
+    /// Role ID for Investor.
+    pub investor_role_id: String,
 }
 
 /// Sensitive authentication settings.
@@ -30,6 +42,14 @@ pub struct AuthConfig {
     pub pb_password: String,
     /// Pocketbase URL.
     pub pb_url: String,
+    /// Discord Client ID.
+    pub discord_client_id: String,
+    /// Discord Client Secret.
+    pub discord_client_secret: String,
+    /// Discord Redirect URL.
+    pub discord_redirect_url: String,
+    /// JWT Secret.
+    pub jwt_secret: String,
 }
 
 /// Monitoring configuration for external services.
@@ -130,6 +150,8 @@ impl Config {
         struct YamlParts {
             monitoring: MonitoringConfig,
             server: ServerConfig,
+            #[serde(default)]
+            discord_auth: DiscordAuthConfig,
         }
 
         let parts: YamlParts = yaml_config.try_deserialize()?;
@@ -148,13 +170,24 @@ impl Config {
             .trim_matches('"')
             .to_string();
 
+        let discord_client_id = std::env::var("DISCORD_CLIENT_ID").unwrap_or_default();
+        let discord_client_secret = std::env::var("DISCORD_CLIENT_SECRET").unwrap_or_default();
+        let discord_redirect_url = std::env::var("DISCORD_REDIRECT_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:3000/api/auth/callback".to_string());
+        let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_default();
+
         Ok(Config {
             monitoring: parts.monitoring,
             server: parts.server,
+            discord_auth: parts.discord_auth,
             auth: AuthConfig {
                 pb_email,
                 pb_password,
                 pb_url,
+                discord_client_id,
+                discord_client_secret,
+                discord_redirect_url,
+                jwt_secret,
             },
         })
     }
@@ -200,9 +233,7 @@ pub fn init() {
     }
 
     let config = Config::load().expect("Failed to load configuration");
-    CONFIG
-        .set(config)
-        .expect("Failed to set global configuration");
+    let _ = CONFIG.set(config);
 }
 
 #[cfg(test)]

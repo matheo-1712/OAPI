@@ -974,6 +974,8 @@ mod tests {
             first_active_at: None,
             last_active_at: None,
             delete_at: None,
+            is_verified: false,
+            is_admin: false,
             roles: vec![DiscordRole {
                 id: "1".to_string(),
                 name: "Admin".to_string(),
