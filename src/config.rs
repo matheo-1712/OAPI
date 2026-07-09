@@ -172,7 +172,8 @@ impl Config {
 
         let discord_client_id = std::env::var("DISCORD_CLIENT_ID").unwrap_or_default();
         let discord_client_secret = std::env::var("DISCORD_CLIENT_SECRET").unwrap_or_default();
-        let discord_redirect_url = std::env::var("DISCORD_REDIRECT_URL").unwrap_or_default();
+        let discord_redirect_url = std::env::var("DISCORD_REDIRECT_URL")
+            .unwrap_or_else(|_| "http://127.0.0.1:3000/api/auth/callback".to_string());
         let jwt_secret = std::env::var("JWT_SECRET").unwrap_or_default();
 
         Ok(Config {
