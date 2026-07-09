@@ -1,0 +1,169 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAPI - Investisseur</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #10b981; /* Green for investors */
+            --accent-hover: #059669;
+            --danger: #ef4444;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .dashboard-container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: -0.025em;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            text-align: center;
+        }
+
+        .stats-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 15px;
+            margin-top: 20px;
+            text-align: left;
+        }
+
+        .stat-box {
+            background: rgba(0,0,0,0.2);
+            padding: 20px;
+            border-radius: 8px;
+            border: 1px solid rgba(255,255,255,0.05);
+        }
+        
+        .stat-value {
+            font-size: 2rem;
+            font-weight: bold;
+            color: var(--accent);
+            margin-bottom: 5px;
+        }
+        
+        .stat-label {
+            font-size: 0.85rem;
+            color: var(--text-muted);
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: #3b82f6;
+            color: white;
+            padding: 10px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background-color: #2563eb;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>Espace Investisseur</h1>
+            <p>Statistiques et performances en temps réel</p>
+        </div>
+
+        <div class="card" id="stats-card">
+            <p class="loading">Chargement des statistiques sécurisées...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('/api/investor/stats')
+                .then(response => {
+                    if (response.status === 403 || response.status === 401) {
+                        throw new Error("Accès refusé");
+                    }
+                    return response.json();
+                })
+                .then(stats => {
+                    const card = document.getElementById('stats-card');
+                    
+                    card.innerHTML = `
+                        <h2 style="margin-top:0; text-align:left; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom:15px;">Aperçu Global</h2>
+                        <div class="stats-grid">
+                            <div class="stat-box">
+                                <div class="stat-value">${stats.images_generated_today || 0}</div>
+                                <div class="stat-label">Images (24h)</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${stats.total_active_users || 0}</div>
+                                <div class="stat-label">Utilisateurs actifs</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${stats.server_uptime_days || 0}</div>
+                                <div class="stat-label">Jours Uptime</div>
+                            </div>
+                            <div class="stat-box">
+                                <div class="stat-value">${stats.performance_score || 0}%</div>
+                                <div class="stat-label">Score de Perf</div>
+                            </div>
+                        </div>
+                        <div style="margin-top: 30px;">
+                            <a href="/admin.html" class="btn">Retour au profil</a>
+                        </div>
+                    `;
+                })
+                .catch(err => {
+                    document.getElementById('stats-card').innerHTML = `
+                        <div style="color: var(--danger); font-size: 3rem; margin-bottom: 10px;">🛑</div>
+                        <h2>Accès Refusé</h2>
+                        <p>Vous n'avez pas l'accréditation LoutreInvesti requise pour voir ces données.</p>
+                        <a href="/admin.html" class="btn">Retour au profil</a>
+                    `;
+                });
+        });
+    </script>
+</body>
+</html>

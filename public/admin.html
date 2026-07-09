@@ -180,7 +180,41 @@
                                     <span class="info-value"><span class="role-badge">${roleStr}</span></span>
                                 </div>
                             </div>
+                            
+                            <div id="dynamic-content" style="margin-top: 30px; text-align: left; background: rgba(0,0,0,0.2); padding: 15px; border-radius: 8px; display: none;"></div>
+                            
+                            <div style="margin-top: 30px;">
+                                ${roleStr === "LoutreInvesti" || roleStr === "Admin" ? '<a href="/investor.html" class="btn" style="background-color: var(--success); margin-right: 10px;">Espace Investisseur</a>' : ''}
+                                <a href="/api/auth/logout?return_to=/admin.html" class="btn" style="background-color: var(--danger);">Se déconnecter</a>
+                            </div>
                         `;
+
+                        if (roleStr === "Admin") {
+                            const dynContent = document.getElementById('dynamic-content');
+                            dynContent.style.display = 'block';
+                            dynContent.innerHTML = "<h3 style='margin-top:0'>Utilisateurs Discord</h3><p class='loading'>Chargement de la base de données...</p>";
+                            
+                            fetch('/api/admin/users')
+                                .then(r => r.json())
+                                .then(users => {
+                                    let html = '<div style="overflow-x: auto;"><table style="width:100%; font-size: 0.85rem; border-collapse: collapse; margin-top: 10px; text-align: left;">';
+                                    html += '<tr style="border-bottom: 1px solid rgba(255,255,255,0.1);"><th style="padding: 8px;">Discord ID</th><th style="padding: 8px;">Vérifié</th><th style="padding: 8px;">Admin</th></tr>';
+                                    if (Array.isArray(users)) {
+                                        users.forEach(u => {
+                                            html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
+                                                <td style="padding: 8px; color: var(--accent); font-family: monospace;">${u.discord_id || 'Inconnu'}</td>
+                                                <td style="padding: 8px;">${u.is_verified ? '<span style="color:var(--success)">Oui</span>' : '<span style="color:var(--danger)">Non</span>'}</td>
+                                                <td style="padding: 8px;">${u.is_admin ? '⭐ Admin' : '-'}</td>
+                                            </tr>`;
+                                        });
+                                    }
+                                    html += '</table></div>';
+                                    dynContent.innerHTML = `<h3 style='margin-top:0'>Utilisateurs Discord (${users.length || 0})</h3>` + html;
+                                })
+                                .catch(e => {
+                                    dynContent.innerHTML = "<h3 style='margin-top:0'>Utilisateurs Discord</h3><p style='color: var(--danger);'>Erreur d'accès à l'API.</p>";
+                                });
+                        }
                     } else {
                         card.innerHTML = `
                             <div class="status-badge status-disconnected">
@@ -192,7 +226,7 @@
                                 Vous devez vous identifier via Discord pour accéder à cette interface.
                             </p>
                             
-                            <a href="/api/auth/login" class="btn">Se connecter avec Discord</a>
+                            <a href="/api/auth/login?return_to=/admin.html" class="btn">Se connecter avec Discord</a>
                         `;
                     }
                 })

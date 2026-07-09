@@ -99,16 +99,13 @@ async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
 
     let mut processed_stats = Vec::new();
     for mut val in raw_stats {
-        if let Some(obj) = val.as_object_mut() {
-            // PocketBase peut renvoyer un nombre pour vocal_time,
-            // on le convertit en String pour correspondre au modèle
-            if let Some(vocal_val) = obj.get("vocal_time").filter(|v| v.is_number()) {
-                let as_string = vocal_val.to_string();
-                obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
-            }
+        if let Some(obj) = val.as_object_mut()
+            && let Some(vocal_val) = obj.get("vocal_time").filter(|v| v.is_number())
+        {
+            let as_string = vocal_val.to_string();
+            obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
         }
-
-        // Désérialisation finale vers le modèle de l'utilisateur
+        
         match serde_json::from_value::<DiscordStats>(val) {
             Ok(stat) => processed_stats.push(stat),
             Err(e) => {

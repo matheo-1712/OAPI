@@ -232,9 +232,7 @@ pub fn init() {
     }
 
     let config = Config::load().expect("Failed to load configuration");
-    CONFIG
-        .set(config)
-        .expect("Failed to set global configuration");
+    let _ = CONFIG.set(config);
 }
 
 #[cfg(test)]
