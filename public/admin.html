@@ -1,0 +1,211 @@
+<!DOCTYPE html>
+<html lang="fr">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>OAPI - Admin</title>
+    <style>
+        :root {
+            --bg-dark: #0f172a;
+            --bg-card: #1e293b;
+            --text-main: #f8fafc;
+            --text-muted: #94a3b8;
+            --accent: #3b82f6;
+            --accent-hover: #2563eb;
+            --danger: #ef4444;
+            --success: #10b981;
+        }
+
+        body {
+            font-family: 'Inter', system-ui, -apple-system, sans-serif;
+            background-color: var(--bg-dark);
+            color: var(--text-main);
+            margin: 0;
+            padding: 40px 20px;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
+            min-height: 100vh;
+            box-sizing: border-box;
+        }
+
+        .dashboard-container {
+            width: 100%;
+            max-width: 600px;
+        }
+
+        .header {
+            text-align: center;
+            margin-bottom: 40px;
+        }
+
+        .header h1 {
+            margin: 0;
+            font-size: 2rem;
+            letter-spacing: -0.025em;
+        }
+
+        .header p {
+            color: var(--text-muted);
+            margin-top: 8px;
+        }
+
+        .card {
+            background-color: var(--bg-card);
+            border-radius: 12px;
+            padding: 30px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+            text-align: center;
+        }
+
+        .status-badge {
+            display: inline-block;
+            padding: 6px 12px;
+            border-radius: 9999px;
+            font-size: 0.875rem;
+            font-weight: 500;
+            margin-bottom: 20px;
+        }
+
+        .status-connected {
+            background-color: rgba(16, 185, 129, 0.1);
+            color: var(--success);
+            border: 1px solid rgba(16, 185, 129, 0.2);
+        }
+
+        .status-disconnected {
+            background-color: rgba(239, 68, 68, 0.1);
+            color: var(--danger);
+            border: 1px solid rgba(239, 68, 68, 0.2);
+        }
+
+        .user-info {
+            margin-top: 20px;
+            padding-top: 20px;
+            border-top: 1px solid rgba(255, 255, 255, 0.1);
+            text-align: left;
+        }
+
+        .info-row {
+            display: flex;
+            justify-content: space-between;
+            margin-bottom: 12px;
+        }
+
+        .info-label {
+            color: var(--text-muted);
+            font-size: 0.875rem;
+        }
+
+        .info-value {
+            font-weight: 500;
+        }
+
+        .role-badge {
+            background-color: rgba(59, 130, 246, 0.1);
+            color: var(--accent);
+            padding: 2px 8px;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .btn {
+            display: inline-block;
+            background-color: var(--accent);
+            color: white;
+            padding: 10px 24px;
+            border-radius: 6px;
+            text-decoration: none;
+            font-weight: 500;
+            transition: background-color 0.2s;
+            border: none;
+            cursor: pointer;
+            margin-top: 20px;
+        }
+
+        .btn:hover {
+            background-color: var(--accent-hover);
+        }
+        
+        .loading {
+            color: var(--text-muted);
+            font-style: italic;
+        }
+    </style>
+</head>
+<body>
+
+    <div class="dashboard-container">
+        <div class="header">
+            <h1>Panneau d'Administration</h1>
+            <p>Accès restreint aux loutres autorisées</p>
+        </div>
+
+        <div class="card" id="status-card">
+            <p class="loading">Vérification de l'accréditation en cours...</p>
+        </div>
+    </div>
+
+    <script>
+        document.addEventListener('DOMContentLoaded', () => {
+            fetch('/api/auth/me')
+                .then(response => response.json())
+                .then(data => {
+                    const card = document.getElementById('status-card');
+                    
+                    if (data.authenticated) {
+                        let roleStr = "Normal";
+                        if (typeof data.role === 'string') {
+                            roleStr = data.role;
+                        } else if (typeof data.role === 'object' && data.role !== null) {
+                            roleStr = Object.keys(data.role)[0] || "Normal";
+                        }
+
+                        card.innerHTML = `
+                            <div class="status-badge status-connected">
+                                ● Connecté
+                            </div>
+                            
+                            <h2>Bienvenue, ${data.username}</h2>
+                            
+                            <div class="user-info">
+                                <div class="info-row">
+                                    <span class="info-label">Identité Discord</span>
+                                    <span class="info-value">@${data.username}</span>
+                                </div>
+                                <div class="info-row">
+                                    <span class="info-label">Niveau d'Accréditation</span>
+                                    <span class="info-value"><span class="role-badge">${roleStr}</span></span>
+                                </div>
+                            </div>
+                        `;
+                    } else {
+                        card.innerHTML = `
+                            <div class="status-badge status-disconnected">
+                                ● Non connecté
+                            </div>
+                            
+                            <h2>Accès Refusé</h2>
+                            <p style="color: var(--text-muted); font-size: 0.9rem; margin-bottom: 24px;">
+                                Vous devez vous identifier via Discord pour accéder à cette interface.
+                            </p>
+                            
+                            <a href="/api/auth/login" class="btn">Se connecter avec Discord</a>
+                        `;
+                    }
+                })
+                .catch(err => {
+                    document.getElementById('status-card').innerHTML = `
+                        <div class="status-badge status-disconnected">
+                            ● Erreur de communication
+                        </div>
+                        <p>Impossible de vérifier votre statut. Le serveur API est peut-être injoignable.</p>
+                    `;
+                    console.error("Auth check failed:", err);
+                });
+        });
+    </script>
+</body>
+</html>

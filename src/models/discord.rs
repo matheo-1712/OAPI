@@ -19,6 +19,10 @@ pub struct DiscordUser {
     pub last_active_at: Option<String>,
     pub delete_at: Option<String>,
     #[serde(default)]
+    pub is_verified: bool,
+    #[serde(default)]
+    pub is_admin: bool,
+    #[serde(default)]
     pub roles: Vec<DiscordRole>,
     #[serde(default)]
     pub stats: Vec<DiscordStats>,

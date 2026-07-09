@@ -20,6 +20,9 @@ use utoipa_swagger_ui::SwaggerUi;
 #[derive(OpenApi)]
 #[openapi(
     paths(
+        handlers::auth_handler::login,
+        handlers::auth_handler::callback,
+        handlers::auth_handler::me,
         handlers::discord_handler::create_discord_summary_by_id,
         handlers::minecraft_handler::create_minecraft_summary_by_id,
         handlers::monitoring_handler::get_monitoring_status,
