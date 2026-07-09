@@ -21,6 +21,9 @@ sha2 = "0.10"
 config = { version = "0.15.23", features = ["yaml"] }
 dotenvy = "0.15"
 craftping = { version = "0.7.0", features = ["async-tokio"] }
+oauth2 = "4.4.2"
+jsonwebtoken = "9.3.0"
+axum-extra = { version = "0.9.3", features = ["cookie"] }
 
 [dev-dependencies]
 mockito = "1.7.2"
