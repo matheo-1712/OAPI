@@ -627,7 +627,8 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         .iter()
         .map(|s| s.vocal_time.parse::<f64>().unwrap_or_default())
         .sum();
-    let total_vocal_decimal = total_vocal_decimal_raw / 10.0;
+    // vocal_time in the database is already in decimal hours.
+    let total_vocal_decimal = total_vocal_decimal_raw;
 
     let mut text_counts = HashMap::new();
     let mut voice_counts = HashMap::new();
