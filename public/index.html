@@ -1,162 +1,875 @@
 <!DOCTYPE html>
-<html lang="en">
+<html lang="fr">
 <head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OAPI - Dark Dashboard</title>
-    <style>
-        :root {
-            --bg-color: #121212;
-            --surface-color: #1e1e1e;
-            --primary-color: #bb86fc;
-            --secondary-color: #03dac6;
-            --text-color: #e0e0e0;
-            --text-muted: #a0a0a0;
-            --error-color: #cf6679;
-        }
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>OtterApi — Dashboard</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Press+Start+2P&family=VT323:wght@400&family=Share+Tech+Mono&display=swap" rel="stylesheet" />
+  <link rel="stylesheet" href="css/base.css" />
+  <link rel="stylesheet" href="css/layout.css" />
+  <link rel="stylesheet" href="css/components.css" />
+  <link rel="stylesheet" href="css/views.css" />
 
-        body {
-            font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            margin: 0;
-            display: flex;
-            flex-direction: column;
-            align-items: center;
-            min-height: 100vh;
-        }
-
-        header {
-            width: 100%;
-            padding: 2rem 0;
-            background-color: var(--surface-color);
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
-            text-align: center;
-            margin-bottom: 2rem;
-        }
-
-        h1 {
-            margin: 0;
-            color: var(--primary-color);
-            letter-spacing: 2px;
-        }
-
-        .container {
-            width: 90%;
-            max-width: 800px;
-            display: flex;
-            flex-direction: column;
-            gap: 1.5rem;
-        }
-
-        .card {
-            background-color: var(--surface-color);
-            padding: 1.5rem;
-            border-radius: 8px;
-            box-shadow: 0 2px 4px rgba(0, 0, 0, 0.2);
-        }
-
-        .links {
-            display: flex;
-            gap: 1rem;
-            justify-content: center;
-        }
-
-        a {
-            color: var(--secondary-color);
-            text-decoration: none;
-            font-weight: bold;
-            padding: 0.5rem 1rem;
-            border: 1px solid var(--secondary-color);
-            border-radius: 4px;
-            transition: all 0.3s ease;
-        }
-
-        a:hover {
-            background-color: var(--secondary-color);
-            color: var(--bg-color);
-        }
-
-        #items-list {
-            list-style: none;
-            padding: 0;
-        }
-
-        .item {
-            border-bottom: 1px solid #333;
-            padding: 1rem 0;
-        }
-
-        .item:last-child {
-            border-bottom: none;
-        }
-
-        .item-name {
-            color: var(--primary-color);
-            font-weight: bold;
-            font-size: 1.1rem;
-        }
-
-        .item-desc {
-            color: var(--text-muted);
-            font-size: 0.9rem;
-            margin-top: 0.25rem;
-        }
-
-        .loading {
-            text-align: center;
-            color: var(--text-muted);
-            font-style: italic;
-        }
-    </style>
 </head>
-<body>
-    <header>
-        <h1>OAPI DASHBOARD</h1>
-        <p style="color: var(--text-muted)">Modern API Foundation</p>
-    </header>
+<body class="grid-bg">
 
-    <div class="container">
-        <div class="card links">
-            <a href="/monitoring.html">📊 Monitoring Status</a>
-            <a href="/swagger-ui" target="_blank">📖 Swagger Docs</a>
-            <a href="/api/items" target="_blank">🔌 API JSON</a>
-        </div>
+<!-- ═══════════════ LOGIN SCREEN ═══════════════ -->
+<div id="login-screen">
+  <div class="login-box pixel-corner">
+    <img src="otter_mascot.png" alt="Otter" class="login-otter" />
+    <div class="login-title">OTTER<br/>API</div>
+    <div class="login-sub">// Connexion requise</div>
+    <hr class="login-divider" />
+    <p style="font-size:15px; color:var(--text2); margin-bottom:20px;">
+      Authentifiez-vous avec votre compte Discord pour accéder au dashboard.
+    </p>
+    <a href="/api/auth/login" class="btn btn-discord" style="width:100%; justify-content:center;">
+      <span>⬡</span> CONNEXION DISCORD
+    </a>
+    <div id="login-error" style="display:none;" class="alert alert-error" style="margin-top:12px;"></div>
+  </div>
+</div>
 
-        <div class="card">
-            <h2>System Items</h2>
-            <div id="loading" class="loading">Fetching data from API...</div>
-            <ul id="items-list"></ul>
-        </div>
+<!-- ═══════════════ APP SHELL ═══════════════ -->
+<div id="app" style="display:none;">
+
+  <!-- HEADER -->
+  <header id="header">
+    <a class="logo" href="#" onclick="navigate('home'); return false;">
+      <img src="otter_mascot.png" alt="Otter" />
+      <div>
+        <div class="logo-text">OTTERAPI</div>
+        <div class="logo-sub">// DEV DASHBOARD</div>
+      </div>
+    </a>
+    <span class="env-badge">◉ DEV</span>
+    <div class="spacer"></div>
+    <div id="user-info">
+      <img id="user-avatar" src="" alt="avatar" onerror="this.style.display='none'" />
+      <div>
+        <div id="user-name">—</div>
+        <div id="user-role">—</div>
+      </div>
+      <button class="btn-logout" onclick="logout()">[ QUITTER ]</button>
+    </div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <nav id="sidebar">
+    <div class="nav-section">
+      <div class="nav-section-title">// NAVIGATION</div>
+      <div class="nav-item active" onclick="navigate('home')" id="nav-home">
+        <span class="nav-icon">⌂</span> Accueil
+      </div>
+      <div class="nav-item" onclick="navigate('monitoring')" id="nav-monitoring">
+        <span class="nav-icon">◈</span> Monitoring
+      </div>
     </div>
 
-    <script>
-        async function fetchItems() {
-            try {
-                const response = await fetch('/api/items');
-                const items = await response.json();
-                const listElement = document.getElementById('items-list');
-                const loadingElement = document.getElementById('loading');
-                
-                loadingElement.style.display = 'none';
-                
-                items.forEach(item => {
-                    const li = document.createElement('li');
-                    li.className = 'item';
-                    li.innerHTML = `
-                        <div class="item-name">${item.name}</div>
-                        <div class="item-desc">${item.description || 'No description available'}</div>
-                    `;
-                    listElement.appendChild(li);
-                });
-            } catch (error) {
-                console.error('Error fetching items:', error);
-                document.getElementById('loading').innerText = 'Failed to load items.';
-                document.getElementById('loading').style.color = 'var(--error-color)';
-            }
-        }
+    <div class="nav-section">
+      <div class="nav-section-title">// GÉNÉRATION</div>
+      <div class="nav-item" onclick="navigate('discord')" id="nav-discord">
+        <span class="nav-icon">⬡</span> Discord Summary
+      </div>
+      <div class="nav-item" onclick="navigate('minecraft')" id="nav-minecraft">
+        <span class="nav-icon">⬛</span> Minecraft Summary
+      </div>
+    </div>
 
-        window.onload = fetchItems;
-    </script>
+    <div class="nav-section" id="nav-section-admin" style="display:none;">
+      <div class="nav-section-title">// ADMIN</div>
+      <div class="nav-item" onclick="navigate('admin')" id="nav-admin">
+        <span class="nav-icon">⚙</span> Utilisateurs
+      </div>
+    </div>
+
+    <div class="nav-section" id="nav-section-investor" style="display:none;">
+      <div class="nav-section-title">// INVESTOR</div>
+      <div class="nav-item" onclick="navigate('investor')" id="nav-investor">
+        <span class="nav-icon">◆</span> Statistiques
+      </div>
+    </div>
+  </nav>
+
+  <!-- MAIN -->
+  <main id="main">
+
+    <!-- ══ HOME ══ -->
+    <div class="view active" id="view-home">
+      <div class="hero">
+        <img src="otter_mascot.png" alt="Otter" class="hero-otter" />
+        <div>
+          <div class="hero-greeting" id="hero-greeting">LOADING<span class="cursor"></span></div>
+          <div class="hero-sub">Bienvenue dans votre espace OtterApi</div>
+        </div>
+      </div>
+
+      <div class="quick-grid">
+        <div class="quick-card qc-discord" onclick="navigate('discord')">
+          <span class="quick-card-icon">⬡</span>
+          <div class="quick-card-title">DISCORD</div>
+          <div class="quick-card-sub">Génère une image résumé</div>
+        </div>
+        <div class="quick-card qc-minecraft" onclick="navigate('minecraft')">
+          <span class="quick-card-icon">⬛</span>
+          <div class="quick-card-title">MINECRAFT</div>
+          <div class="quick-card-sub">Statistiques joueur</div>
+        </div>
+        <div class="quick-card qc-monitoring" onclick="navigate('monitoring')">
+          <span class="quick-card-icon">◈</span>
+          <div class="quick-card-title">MONITORING</div>
+          <div class="quick-card-sub">État des services</div>
+        </div>
+        <div class="quick-card qc-investor" onclick="navigate('investor')" id="qc-investor" style="display:none;">
+          <span class="quick-card-icon">◆</span>
+          <div class="quick-card-title">INVESTOR</div>
+          <div class="quick-card-sub">Statistiques avancées</div>
+        </div>
+        <div class="quick-card qc-admin" onclick="navigate('admin')" id="qc-admin" style="display:none;">
+          <span class="quick-card-icon">⚙</span>
+          <div class="quick-card-title">ADMIN</div>
+          <div class="quick-card-sub">Gestion des membres</div>
+        </div>
+      </div>
+
+      <!-- Monitoring mini preview -->
+      <div class="card">
+        <div class="card-title">◈ STATUS RAPIDE</div>
+        <div id="home-monitoring-preview">
+          <span class="loader">CHARGEMENT</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ DISCORD ══ -->
+    <div class="view" id="view-discord">
+      <div class="page-title">⬡ DISCORD SUMMARY</div>
+      <div class="page-sub">// Génère une image résumé pour votre compte Discord</div>
+
+      <div class="card">
+        <div class="card-title">▶ GÉNÉRATION</div>
+        <div class="form-group">
+          <label class="form-label">Discord Snowflake ID</label>
+          <input
+            type="text"
+            class="form-input"
+            id="discord-id-input"
+            placeholder="ex: 123456789012345678"
+            maxlength="20"
+          />
+          <div id="discord-id-hint" style="font-size:12px;color:var(--text3);margin-top:4px;">
+            ⟶ Sera pré-rempli avec votre ID Discord
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="generateDiscordSummary()" id="btn-discord-gen">
+          ▶ GÉNÉRER L'IMAGE
+        </button>
+        <div id="discord-error" style="display:none;" class="alert alert-error"></div>
+      </div>
+
+      <div id="discord-result" style="display:none;">
+        <div class="card">
+          <div class="card-title">◉ RÉSULTAT</div>
+          <div class="result-img-wrap">
+            <img id="discord-img" src="" alt="Discord Summary" class="result-img" />
+          </div>
+          <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+            <a id="discord-img-link" href="#" target="_blank" class="btn btn-cyan">↗ OUVRIR EN PLEIN ÉCRAN</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MINECRAFT ══ -->
+    <div class="view" id="view-minecraft">
+      <div class="page-title">⬛ MINECRAFT SUMMARY</div>
+      <div class="page-sub">// Génère une image résumé pour un joueur Minecraft</div>
+
+      <div class="card">
+        <div class="card-title">▶ GÉNÉRATION</div>
+        <div class="form-group">
+          <label class="form-label">UUID Minecraft</label>
+          <input
+            type="text"
+            class="form-input"
+            id="minecraft-uuid-input"
+            placeholder="ex: 550e8400-e29b-41d4-a716-446655440000"
+            maxlength="36"
+          />
+          <div style="font-size:12px;color:var(--text3);margin-top:4px;">
+            ⟶ Format UUID avec ou sans tirets (32 hex chars)
+          </div>
+        </div>
+        <button class="btn btn-primary" onclick="generateMinecraftSummary()" id="btn-minecraft-gen">
+          ▶ GÉNÉRER L'IMAGE
+        </button>
+        <div id="minecraft-error" style="display:none;" class="alert alert-error"></div>
+      </div>
+
+      <div id="minecraft-result" style="display:none;">
+        <div class="card">
+          <div class="card-title">◉ RÉSULTAT</div>
+          <div class="result-img-wrap">
+            <img id="minecraft-img" src="" alt="Minecraft Summary" class="result-img" />
+          </div>
+          <div style="margin-top:16px; display:flex; gap:10px; flex-wrap:wrap;">
+            <a id="minecraft-img-link" href="#" target="_blank" class="btn btn-cyan">↗ OUVRIR EN PLEIN ÉCRAN</a>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ MONITORING ══ -->
+    <div class="view" id="view-monitoring">
+      <div class="page-title">◈ MONITORING</div>
+      <div class="page-sub">// État en temps réel des services OtterApi</div>
+
+      <div style="display:flex; gap:10px; margin-bottom:20px; flex-wrap:wrap;">
+        <div class="stats-grid" style="flex:1; margin-bottom:0;" id="monitoring-summary">
+          <div class="stat-card">
+            <span class="stat-value" id="mon-total">—</span>
+            <span class="stat-label">Services</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="mon-up" style="color:var(--green);">—</span>
+            <span class="stat-label">Opérationnels</span>
+          </div>
+          <div class="stat-card">
+            <span class="stat-value" id="mon-down" style="color:var(--red);">—</span>
+            <span class="stat-label">En anomalie</span>
+          </div>
+        </div>
+        <button class="btn btn-cyan" onclick="loadMonitoring()" style="align-self:flex-start;">↺ REFRESH</button>
+      </div>
+
+      <div class="card">
+        <div class="card-title">▶ SERVICES</div>
+        <div class="mon-meta">
+          <span id="mon-last-update">—</span>
+          <span style="color:var(--text3);">POLL 30s</span>
+        </div>
+        <div class="mon-progress-track">
+          <div class="mon-progress-fill" id="mon-progress-bar"></div>
+        </div>
+        <div id="monitoring-list">
+          <span class="loader">CHARGEMENT</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ ADMIN ══ -->
+    <div class="view" id="view-admin">
+      <div class="page-title">⚙ ADMIN — UTILISATEURS</div>
+      <div class="page-sub">// Liste de tous les membres Discord enregistrés</div>
+
+      <div style="margin-bottom:16px; display:flex; gap:10px; align-items:center; flex-wrap:wrap;">
+        <input
+          type="text"
+          class="form-input"
+          id="admin-search"
+          placeholder="Filtrer par pseudo..."
+          style="max-width:300px;"
+          oninput="filterUsers()"
+        />
+        <button class="btn btn-cyan" onclick="loadAdmin()">↺ REFRESH</button>
+        <span id="admin-count" style="font-size:14px; color:var(--text3); margin-left:auto;"></span>
+      </div>
+
+      <div class="card" id="admin-card">
+        <div id="admin-content">
+          <span class="loader">CHARGEMENT</span>
+        </div>
+      </div>
+    </div>
+
+    <!-- ══ INVESTOR ══ -->
+    <div class="view" id="view-investor">
+      <div class="page-title">◆ INVESTOR STATS</div>
+      <div class="page-sub">// Statistiques de performance de la plateforme</div>
+
+      <div id="investor-content">
+        <span class="loader">CHARGEMENT</span>
+      </div>
+    </div>
+
+  </main>
+</div>
+
+<!-- STATUS BAR -->
+<div class="status-bar" id="status-bar" style="display:none;">
+  <div class="sb-item">
+    <div class="sb-dot" id="sb-api-dot" style="background:var(--yellow)"></div>
+    <span id="sb-api-status">API: connecting...</span>
+  </div>
+  <div class="sb-item">
+    <span id="sb-user-info">—</span>
+  </div>
+  <div id="sb-clock">--:--:--</div>
+</div>
+
+<script>
+// ═══════════════════════════════════════════
+// STATE
+// ═══════════════════════════════════════════
+const API = '';  // same origin
+let currentUser = null;
+let allUsers = [];
+let currentView = 'home';
+
+// Monitoring cache & polling
+let monitoringCache = null;          // last successful response
+let monitoringPollTimer = null;      // setInterval handle
+let monitoringCountdownTimer = null; // setInterval for countdown bar
+const POLL_INTERVAL = 30_000;        // 30 seconds
+
+// ═══════════════════════════════════════════
+// BOOT
+// ═══════════════════════════════════════════
+(async () => {
+  // Check login_error param
+  const params = new URLSearchParams(location.search);
+  if (params.get('login_error')) {
+    document.getElementById('login-error').textContent = '✖ ' + decodeURIComponent(params.get('login_error'));
+    document.getElementById('login-error').style.display = 'block';
+  }
+
+  const user = await fetchMe();
+  if (!user || !user.authenticated) {
+    document.getElementById('login-screen').style.display = 'flex';
+    return;
+  }
+
+  bootApp(user);
+})();
+
+async function fetchMe() {
+  try {
+    const r = await fetch('/api/auth/me', { credentials: 'include' });
+    if (!r.ok) return null;
+    return await r.json();
+  } catch { return null; }
+}
+
+function bootApp(user) {
+  currentUser = user;
+  document.getElementById('login-screen').style.display = 'none';
+  document.getElementById('app').style.display = 'grid';
+  document.getElementById('status-bar').style.display = 'flex';
+
+  // Fill header
+  document.getElementById('user-name').textContent = user.username || '—';
+  document.getElementById('user-role').textContent = '[ ' + (user.role || 'user').toUpperCase() + ' ]';
+
+  // Hero greeting
+  document.getElementById('hero-greeting').innerHTML =
+    'BIENVENUE, ' + (user.username || 'OTTER').toUpperCase();
+
+  // Show role-specific nav
+  if (user.role === 'admin') {
+    document.getElementById('nav-section-admin').style.display = 'block';
+    document.getElementById('nav-section-investor').style.display = 'block';
+    document.getElementById('qc-admin').style.display = 'block';
+    document.getElementById('qc-investor').style.display = 'block';
+  } else if (user.role === 'investor' || user.role === 'LoutreInvesti') {
+    document.getElementById('nav-section-investor').style.display = 'block';
+    document.getElementById('qc-investor').style.display = 'block';
+  }
+
+  // Pre-fill Discord ID
+  if (user.sub || user.discord_id) {
+    document.getElementById('discord-id-input').value = user.sub || user.discord_id || '';
+  }
+
+  // Status bar
+  document.getElementById('sb-user-info').textContent =
+    (user.username || '?') + ' :: ' + (user.role || 'user');
+  document.getElementById('sb-api-dot').style.background = 'var(--green)';
+  document.getElementById('sb-api-status').textContent = 'API: connected';
+
+  // Clock
+  setInterval(() => {
+    document.getElementById('sb-clock').textContent = new Date().toLocaleTimeString('fr-FR');
+  }, 1000);
+
+  // Load home data immediately
+  loadHomeMonitoring();
+
+  // Start background polling for monitoring
+  startMonitoringPolling();
+
+  // Redirect if login success
+  if (new URLSearchParams(location.search).get('login') === 'success') {
+    history.replaceState({}, '', '/');
+  }
+}
+
+// ═══════════════════════════════════════════
+// NAVIGATION
+// ═══════════════════════════════════════════
+function navigate(view) {
+  // Hide all
+  document.querySelectorAll('.view').forEach(v => v.classList.remove('active'));
+  document.querySelectorAll('.nav-item').forEach(n => n.classList.remove('active'));
+
+  document.getElementById('view-' + view).classList.add('active');
+  const navEl = document.getElementById('nav-' + view);
+  if (navEl) navEl.classList.add('active');
+
+  currentView = view;
+
+  // Lazy load
+  if (view === 'monitoring') loadMonitoring();
+  if (view === 'admin') loadAdmin();
+  if (view === 'investor') loadInvestor();
+}
+
+// ═══════════════════════════════════════════
+// AUTH
+// ═══════════════════════════════════════════
+async function logout() {
+  await fetch('/api/auth/logout', { credentials: 'include' });
+  location.href = '/';
+}
+
+// ═══════════════════════════════════════════
+// DISCORD SUMMARY
+// ═══════════════════════════════════════════
+async function generateDiscordSummary() {
+  const id = document.getElementById('discord-id-input').value.trim();
+  const errEl = document.getElementById('discord-error');
+  const resEl = document.getElementById('discord-result');
+  const btn = document.getElementById('btn-discord-gen');
+
+  errEl.style.display = 'none';
+  resEl.style.display = 'none';
+
+  if (!id) {
+    showError(errEl, 'Veuillez entrer un ID Discord');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader">GÉNÉRATION</span>';
+
+  try {
+    const r = await fetch('/api/discord-summary/' + encodeURIComponent(id), {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!r.ok) {
+      const msg = await r.text();
+      showError(errEl, '✖ ' + (msg || 'Erreur ' + r.status));
+      return;
+    }
+
+    const data = await r.json();
+    const imgUrl = makeAbsoluteUrl(data.image_url);
+
+    document.getElementById('discord-img').src = imgUrl;
+    document.getElementById('discord-img-link').href = imgUrl;
+    resEl.style.display = 'block';
+    resEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (e) {
+    showError(errEl, '✖ Erreur réseau : ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '▶ GÉNÉRER L\'IMAGE';
+  }
+}
+
+// ═══════════════════════════════════════════
+// MINECRAFT SUMMARY
+// ═══════════════════════════════════════════
+async function generateMinecraftSummary() {
+  const uuid = document.getElementById('minecraft-uuid-input').value.trim();
+  const errEl = document.getElementById('minecraft-error');
+  const resEl = document.getElementById('minecraft-result');
+  const btn = document.getElementById('btn-minecraft-gen');
+
+  errEl.style.display = 'none';
+  resEl.style.display = 'none';
+
+  if (!uuid) {
+    showError(errEl, 'Veuillez entrer un UUID Minecraft');
+    return;
+  }
+
+  btn.disabled = true;
+  btn.innerHTML = '<span class="loader">GÉNÉRATION</span>';
+
+  try {
+    const r = await fetch('/api/minecraft-summary/' + encodeURIComponent(uuid), {
+      method: 'POST',
+      credentials: 'include'
+    });
+
+    if (!r.ok) {
+      const msg = await r.text();
+      showError(errEl, '✖ ' + (msg || 'Erreur ' + r.status));
+      return;
+    }
+
+    const data = await r.json();
+    const imgUrl = makeAbsoluteUrl(data.image_url);
+
+    document.getElementById('minecraft-img').src = imgUrl;
+    document.getElementById('minecraft-img-link').href = imgUrl;
+    resEl.style.display = 'block';
+    resEl.scrollIntoView({ behavior: 'smooth', block: 'start' });
+
+  } catch (e) {
+    showError(errEl, '✖ Erreur réseau : ' + e.message);
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = '▶ GÉNÉRER L\'IMAGE';
+  }
+}
+
+// ═══════════════════════════════════════════
+// MONITORING — Cache + Auto-poll
+// ═══════════════════════════════════════════
+
+/** Fetch fresh data and store in cache. Returns the data or null on error. */
+async function fetchMonitoring() {
+  try {
+    const r = await fetch('/api/monitoring', { credentials: 'include' });
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+    monitoringCache = { data, fetchedAt: Date.now() };
+    return data;
+  } catch (e) {
+    return null;
+  }
+}
+
+/** Start a background poll every POLL_INTERVAL ms. */
+function startMonitoringPolling() {
+  if (monitoringPollTimer) return; // already running
+  monitoringPollTimer = setInterval(async () => {
+    const data = await fetchMonitoring();
+    if (!data) return;
+    // Silently update home preview (always)
+    const homeEl = document.getElementById('home-monitoring-preview');
+    if (homeEl) renderMonitoring(data, homeEl, false);
+    // Silently update monitoring view if active (no spinner)
+    if (currentView === 'monitoring') {
+      const listEl = document.getElementById('monitoring-list');
+      if (listEl) renderMonitoring(data, listEl, true);
+      updateMonitoringMeta();
+    }
+  }, POLL_INTERVAL);
+}
+
+/** Show time-since-last-fetch and a countdown bar. */
+function updateMonitoringMeta() {
+  if (!monitoringCache) return;
+  const elapsed = Date.now() - monitoringCache.fetchedAt;
+  const remaining = Math.max(0, POLL_INTERVAL - elapsed);
+  const pct = Math.round(((POLL_INTERVAL - remaining) / POLL_INTERVAL) * 100);
+
+  const metaEl = document.getElementById('mon-last-update');
+  const barEl  = document.getElementById('mon-progress-bar');
+  if (metaEl) {
+    const s = Math.round(elapsed / 1000);
+    metaEl.textContent = 'Actualisé il y a ' + s + 's — prochain dans ' + Math.round(remaining / 1000) + 's';
+  }
+  if (barEl) barEl.style.width = pct + '%';
+}
+
+/** Load monitoring: show cache instantly if available, then fetch fresh data. */
+async function loadMonitoring() {
+  const listEl = document.getElementById('monitoring-list');
+
+  // 1. If we have cache, show it immediately (no spinner)
+  if (monitoringCache) {
+    renderMonitoring(monitoringCache.data, listEl, true);
+    updateMonitoringMeta();
+  } else {
+    listEl.innerHTML = '<span class="loader">CHARGEMENT</span>';
+  }
+
+  // 2. Fetch fresh data in background
+  const data = await fetchMonitoring();
+  if (!data) {
+    if (!monitoringCache) {
+      listEl.innerHTML = '<div class="alert alert-error">✖ Impossible de joindre l\'API</div>';
+    }
+    return;
+  }
+  renderMonitoring(data, listEl, true);
+  updateMonitoringMeta();
+
+  // 3. Start countdown refresh display
+  if (monitoringCountdownTimer) clearInterval(monitoringCountdownTimer);
+  monitoringCountdownTimer = setInterval(() => {
+    if (currentView === 'monitoring') updateMonitoringMeta();
+    else {
+      clearInterval(monitoringCountdownTimer);
+      monitoringCountdownTimer = null;
+    }
+  }, 1000);
+}
+
+async function loadHomeMonitoring() {
+  const el = document.getElementById('home-monitoring-preview');
+
+  // Show cache instantly if we have it
+  if (monitoringCache) {
+    renderMonitoring(monitoringCache.data, el, false);
+    return;
+  }
+
+  const data = await fetchMonitoring();
+  if (!data) {
+    el.innerHTML = '<div class="alert alert-error">✖ Monitoring indisponible</div>';
+    return;
+  }
+  renderMonitoring(data, el, false);
+}
+
+// Category metadata
+const CATEGORY_META = {
+  discord:      { label: 'Discord',      icon: '⧡', color: '#5865f2' },
+  minecraft:    { label: 'Minecraft',    icon: '⬛', color: 'var(--green)' },
+  site:         { label: 'Sites Web',    icon: '▦', color: 'var(--primary)' },
+  api:          { label: 'APIs',         icon: '◐', color: 'var(--yellow)' },
+  'self-hosted':{ label: 'Self-Hosted',  icon: '⌂', color: 'var(--accent-lt)' },
+  http:         { label: 'HTTP',         icon: '◎', color: 'var(--text2)' },
+};
+
+function renderMonitoring(data, container, showStats) {
+  const services = data.services || [];
+  const upCount   = services.filter(s => isUp(s)).length;
+  const downCount = services.length - upCount;
+
+  if (showStats) {
+    document.getElementById('mon-total').textContent = services.length;
+    document.getElementById('mon-up').textContent   = upCount;
+    document.getElementById('mon-down').textContent = downCount;
+  }
+
+  if (services.length === 0) {
+    container.innerHTML = '<div class="alert alert-info">Aucun service configuré.</div>';
+    return;
+  }
+
+  // Group services by type_name
+  const groups = {};
+  for (const s of services) {
+    const key = (s.type_name || s.service_type || s.type || 'http').toLowerCase();
+    if (!groups[key]) groups[key] = [];
+    groups[key].push(s);
+  }
+
+  // Render each category
+  const html = Object.entries(groups).map(([type, list]) => {
+    const meta  = CATEGORY_META[type] || { label: type.toUpperCase(), icon: '◇', color: 'var(--text2)' };
+    const allUp = list.every(s => isUp(s));
+    const anyDown = list.some(s => !isUp(s));
+
+    const rows = list.map(s => {
+      const up = isUp(s);
+      // Extra metadata line
+      let extra = '';
+      if (s.metadata) {
+        if (s.metadata.uptime)     extra = `<span class="svc-extra">⏱ ${esc(s.metadata.uptime.human)}</span>`;
+        if (s.metadata.online_players != null)
+          extra = `<span class="svc-extra">▶ ${s.metadata.online_players}/${s.metadata.max_players} joueurs</span>`;
+        if (s.metadata.discord && s.metadata.discord.ping != null)
+          extra += `<span class="svc-extra">ping ${s.metadata.discord.ping}ms</span>`;
+      }
+      if (!up && s.error) extra = `<span class="svc-error">${esc(s.error.substring(0,60))}</span>`;
+
+      return `
+        <div class="service-item">
+          <div class="service-dot ${up ? 'dot-up' : 'dot-down'}"></div>
+          <div class="svc-main">
+            <span class="service-name">${esc(s.name || '—')}</span>
+            ${extra}
+          </div>
+          <div class="service-status ${up ? 'status-up' : 'status-down'}">${up ? 'UP' : 'DOWN'}</div>
+          <div class="service-time">${s.response_time_ms != null ? s.response_time_ms.toFixed(0) + '&thinsp;ms' : '—'}</div>
+        </div>`;
+    }).join('');
+
+    return `
+      <div class="mon-category">
+        <div class="mon-cat-header" style="--cat-color:${meta.color}">
+          <span class="mon-cat-icon">${meta.icon}</span>
+          <span class="mon-cat-label">${meta.label}</span>
+          <span class="mon-cat-count ${anyDown ? 'has-down' : 'all-up'}">
+            ${list.filter(s => isUp(s)).length}/${list.length} UP
+          </span>
+        </div>
+        <div class="service-list">${rows}</div>
+      </div>`;
+  }).join('');
+
+  container.innerHTML = html;
+}
+
+function isUp(s) {
+  const status = (s.status || '').toUpperCase();
+  return status === 'UP' || status === 'OK' || status === 'HEALTHY' || status === 'ONLINE';
+}
+
+// ═══════════════════════════════════════════
+// ADMIN
+// ═══════════════════════════════════════════
+async function loadAdmin() {
+  if (!currentUser || currentUser.role !== 'admin') {
+    document.getElementById('admin-content').innerHTML = renderForbidden();
+    return;
+  }
+
+  const content = document.getElementById('admin-content');
+  content.innerHTML = '<span class="loader">CHARGEMENT</span>';
+
+  try {
+    const r = await fetch('/api/admin/users', { credentials: 'include' });
+    if (r.status === 403) { content.innerHTML = renderForbidden(); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    allUsers = await r.json();
+    renderUsersTable(allUsers);
+  } catch (e) {
+    content.innerHTML = '<div class="alert alert-error">✖ ' + e.message + '</div>';
+  }
+}
+
+function renderUsersTable(users) {
+  document.getElementById('admin-count').textContent = users.length + ' utilisateur(s)';
+
+  if (users.length === 0) {
+    document.getElementById('admin-content').innerHTML =
+      '<div class="alert alert-info">Aucun utilisateur trouvé.</div>';
+    return;
+  }
+
+  const rows = users.map(u => `
+    <tr>
+      <td>
+        <img
+          class="user-avatar-sm"
+          src="${u.avatar_url || u.avatar || ''}"
+          onerror="this.style.display='none'"
+          alt=""
+        />
+      </td>
+      <td>${esc(u.username || u.name || '—')}</td>
+      <td style="font-family:'Share Tech Mono',monospace; font-size:13px; color:var(--text3);">
+        ${esc(u.discord_id || u.id || '—')}
+      </td>
+      <td><span class="role-badge role-${getRoleClass(u.role)}">${esc(u.role || 'user')}</span></td>
+      <td style="color:var(--text3); font-size:13px;">${formatDate(u.created || u.joined_at)}</td>
+    </tr>
+  `).join('');
+
+  document.getElementById('admin-content').innerHTML = `
+    <table class="users-table">
+      <thead>
+        <tr>
+          <th></th>
+          <th>Pseudo</th>
+          <th>Discord ID</th>
+          <th>Rôle</th>
+          <th>Inscrit le</th>
+        </tr>
+      </thead>
+      <tbody>${rows}</tbody>
+    </table>
+  `;
+}
+
+function filterUsers() {
+  const q = document.getElementById('admin-search').value.toLowerCase();
+  const filtered = allUsers.filter(u =>
+    (u.username || u.name || '').toLowerCase().includes(q)
+  );
+  renderUsersTable(filtered);
+}
+
+function getRoleClass(role) {
+  if (role === 'admin') return 'admin';
+  if (role === 'investor' || role === 'LoutreInvesti') return 'investor';
+  return 'user';
+}
+
+// ═══════════════════════════════════════════
+// INVESTOR
+// ═══════════════════════════════════════════
+async function loadInvestor() {
+  const el = document.getElementById('investor-content');
+  el.innerHTML = '<span class="loader">CHARGEMENT</span>';
+
+  if (!currentUser || (currentUser.role !== 'admin' && currentUser.role !== 'investor' && currentUser.role !== 'LoutreInvesti')) {
+    el.innerHTML = renderForbidden();
+    return;
+  }
+
+  try {
+    const r = await fetch('/api/investor/stats', { credentials: 'include' });
+    if (r.status === 403) { el.innerHTML = renderForbidden(); return; }
+    if (!r.ok) throw new Error('HTTP ' + r.status);
+    const data = await r.json();
+
+    const entries = Object.entries(data);
+    el.innerHTML = `
+      <div class="stats-grid">
+        ${entries.map(([k, v]) => `
+          <div class="stat-card">
+            <span class="stat-value">${formatStatValue(v)}</span>
+            <span class="stat-label">${formatStatKey(k)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  } catch (e) {
+    el.innerHTML = '<div class="alert alert-error">✖ ' + e.message + '</div>';
+  }
+}
+
+// ═══════════════════════════════════════════
+// UTILS
+// ═══════════════════════════════════════════
+function esc(str) {
+  return String(str ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;');
+}
+
+function showError(el, msg) {
+  el.textContent = msg;
+  el.style.display = 'block';
+}
+
+function renderForbidden() {
+  return `<div class="forbidden">
+    <span class="forbidden-code">403</span>
+    <div class="forbidden-msg">// Accès refusé — rôle insuffisant</div>
+  </div>`;
+}
+
+function makeAbsoluteUrl(url) {
+  if (!url) return '';
+  if (url.startsWith('http')) return url;
+  return url.startsWith('/') ? url : '/' + url;
+}
+
+function formatDate(str) {
+  if (!str) return '—';
+  try { return new Date(str).toLocaleDateString('fr-FR'); }
+  catch { return str; }
+}
+
+function formatStatValue(v) {
+  if (typeof v === 'number') return v.toLocaleString('fr-FR');
+  return String(v);
+}
+
+function formatStatKey(k) {
+  return k.replace(/_/g, ' ').replace(/\b\w/g, c => c.toUpperCase());
+}
+</script>
 </body>
 </html>

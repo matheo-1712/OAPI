@@ -1,0 +1,257 @@
+/* ==============================================
+   COMPONENTS — Cards, stats, forms, buttons,
+                alerts, loader, table, badges
+   ============================================== */
+
+/* ── Cards ── */
+.card {
+  background: var(--bg2);
+  border: var(--pixel) solid var(--border2);
+  padding: 20px;
+  margin-bottom: 20px;
+}
+
+.card-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 9px;
+  color: var(--primary);
+  margin-bottom: 16px;
+  letter-spacing: 1px;
+  border-left: 3px solid var(--primary);
+  padding-left: 8px;
+}
+
+/* Stats grid */
+.stats-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  gap: 12px;
+  margin-bottom: 24px;
+}
+
+.stat-card {
+  background: var(--bg3);
+  border: var(--pixel) solid var(--border2);
+  padding: 16px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+  transition: border-color 0.2s;
+}
+.stat-card:hover {
+  border-color: var(--primary);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.4);
+}
+.stat-card::before {
+  content: '';
+  position: absolute;
+  top: 0; left: 0; right: 0;
+  height: 2px;
+  background: linear-gradient(90deg, var(--accent), var(--primary-lt));
+}
+
+.stat-value {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 22px;
+  color: var(--primary-lt);
+  display: block;
+  margin-bottom: 6px;
+}
+.stat-label {
+  font-size: 13px;
+  color: var(--text3);
+}
+
+/* ── Forms ── */
+.form-group { margin-bottom: 16px; }
+
+.form-label {
+  display: block;
+  font-size: 14px;
+  color: var(--text2);
+  margin-bottom: 6px;
+}
+
+.form-input {
+  width: 100%;
+  background: var(--bg3);
+  border: var(--pixel) solid var(--border2);
+  color: var(--text);
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 15px;
+  padding: 10px 12px;
+  outline: none;
+  transition: border-color 0.1s;
+}
+.form-input:focus {
+  border-color: var(--primary);
+  box-shadow: inset 0 0 0 1px var(--primary);
+}
+.form-input::placeholder { color: var(--text3); }
+
+/* ── Buttons ── */
+.btn {
+  font-family: 'VT323', monospace;
+  font-size: 18px;
+  padding: 8px 20px;
+  cursor: pointer;
+  border: var(--pixel) solid;
+  transition: all 0.1s;
+  position: relative;
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+}
+.btn:active { transform: translate(2px, 2px); }
+
+.btn-logout {
+  font-family: 'VT323', monospace;
+  font-size: 16px;
+  padding: 4px 12px;
+  background: transparent;
+  border: var(--pixel) solid var(--red);
+  color: var(--red);
+  cursor: pointer;
+  transition: all 0.1s;
+}
+.btn-logout:hover {
+  background: var(--red);
+  color: var(--text);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+}
+
+.btn-primary {
+  background: var(--primary);
+  border-color: var(--primary-lt);
+  color: white;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+}
+.btn-primary:hover {
+  background: var(--primary-lt);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+}
+
+.btn-secondary {
+  background: transparent;
+  border-color: var(--accent);
+  color: var(--primary-lt);
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+}
+.btn-secondary:hover {
+  background: rgba(184, 133, 74, 0.1);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+}
+
+/* kept for backwards compat with existing HTML */
+.btn-cyan { background: transparent; border-color: var(--accent); color: var(--primary-lt); box-shadow: 4px 4px 0 rgba(0,0,0,0.5); }
+.btn-cyan:hover { background: rgba(184,133,74,0.1); box-shadow: 6px 6px 0 rgba(0,0,0,0.5); }
+
+.btn-discord {
+  background: #5865f2;
+  border-color: #8891f8;
+  color: white;
+  box-shadow: 4px 4px 0 rgba(0,0,0,0.5);
+}
+.btn-discord:hover {
+  background: #4752c4;
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+}
+
+/* ── Result image ── */
+.result-img-wrap {
+  border: var(--pixel) solid var(--primary);
+  box-shadow: 6px 6px 0 rgba(0,0,0,0.5);
+  display: inline-block;
+  margin-top: 16px;
+  position: relative;
+}
+.result-img-wrap::before {
+  content: '[ GENERATED ]';
+  position: absolute;
+  top: -22px;
+  left: 0;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--primary);
+  letter-spacing: 2px;
+}
+.result-img {
+  display: block;
+  max-width: 100%;
+  image-rendering: pixelated;
+}
+
+/* ── Alerts ── */
+.alert {
+  padding: 12px 16px;
+  border: var(--pixel) solid;
+  font-size: 15px;
+  margin-bottom: 16px;
+}
+.alert-error   { border-color: var(--red);    color: var(--red);       background: rgba(184,84,68,0.08); }
+.alert-success { border-color: var(--green);   color: var(--green);     background: rgba(107,154,94,0.08); }
+.alert-info    { border-color: var(--primary); color: var(--primary-lt);background: rgba(184,133,74,0.08); }
+.alert-warn    { border-color: var(--yellow);  color: var(--yellow);    background: rgba(196,150,50,0.08); }
+
+.error-msg {
+  font-size: 14px;
+  color: var(--red);
+  margin-top: 8px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+}
+
+/* ── Loader ── */
+.loader {
+  display: inline-block;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 14px;
+  color: var(--primary);
+  letter-spacing: 3px;
+}
+.loader::after {
+  content: '...';
+  animation: dots 1s steps(4, end) infinite;
+}
+
+/* ── Users table ── */
+.users-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 15px;
+}
+.users-table th {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  letter-spacing: 1px;
+  color: var(--text3);
+  padding: 10px 12px;
+  border-bottom: var(--pixel) solid var(--border2);
+  text-align: left;
+  text-transform: uppercase;
+}
+.users-table td {
+  padding: 10px 12px;
+  border-bottom: 1px solid var(--border);
+  color: var(--text);
+  vertical-align: middle;
+}
+.users-table tr:hover td { background: rgba(184,133,74,0.05); }
+
+.user-avatar-sm {
+  width: 28px;
+  height: 28px;
+  border: 1px solid var(--border2);
+  image-rendering: pixelated;
+}
+
+/* ── Role badges ── */
+.role-badge {
+  font-size: 12px;
+  padding: 2px 8px;
+  font-family: 'Share Tech Mono', monospace;
+}
+.role-admin    { color: var(--red);    border: 1px solid rgba(184,84,68,0.4);  background: rgba(184,84,68,0.08); }
+.role-investor { color: var(--yellow); border: 1px solid rgba(196,150,50,0.4); background: rgba(196,150,50,0.08); }
+.role-user     { color: var(--text2);  border: 1px solid var(--border2); }

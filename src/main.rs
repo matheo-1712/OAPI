@@ -95,23 +95,32 @@ async fn main() {
     // Build app
     let config = config::Config::global();
 
-    // Modify OpenAPI spec at runtime to match configured routes
-    let mut openapi = ApiDoc::openapi();
-    update_openapi_paths(&mut openapi, config);
-
-    let app = Router::new()
+    let mut app = Router::new()
         .nest(&config.server.routes.base, routes::api_routes())
-        .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
-        .fallback_service(ServeDir::new("public"))
-        .layer(TraceLayer::new_for_http());
+        .nest_service("/generated_images", ServeDir::new("public/generated_images"));
+
+    if env == "development" {
+        // Modify OpenAPI spec at runtime to match configured routes
+        let mut openapi = ApiDoc::openapi();
+        update_openapi_paths(&mut openapi, config);
+
+        app = app
+            .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
+            .fallback_service(ServeDir::new("public"));
+    }
+
+    let app = app.layer(TraceLayer::new_for_http());
 
     let addr_str = format!("{}:{}", config.server.host, config.server.port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address/port in config");
 
     tracing::info!("🚀 OAPI Server starting up...");
     tracing::info!("📡 Listening on http://{}", addr);
-    tracing::info!("📖 Swagger UI available at http://{}/swagger-ui", addr);
-    tracing::info!("🌐 Web interface available at http://{}", addr);
+    
+    if env == "development" {
+        tracing::info!("📖 Swagger UI available at http://{}/swagger-ui", addr);
+        tracing::info!("🌐 Web interface available at http://{}", addr);
+    }
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(listener, app).await.unwrap();

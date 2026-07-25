@@ -1,0 +1,124 @@
+/* ==============================================
+   BASE — Variables, reset, body, scrollbar,
+           polices, utilitaires pixel art
+   ============================================== */
+
+/* Design tokens */
+:root {
+  --bg:         #080604;
+  --bg2:        #100d09;
+  --bg3:        #181309;
+  --border:     #2a1f14;
+  --border2:    #3d2d1c;
+  --primary:    #b8854a;   /* loutre — fourrure ambrée */
+  --primary-lt: #d4a870;   /* sable clair */
+  --accent:     #7a5230;   /* brun moyen */
+  --accent-lt:  #a37048;   /* brun clair */
+  --green:      #6b9a5e;
+  --red:        #b85444;
+  --yellow:     #c49632;
+  --orange:     #c47832;
+  --text:       #e8d5b8;   /* crème douce */
+  --text2:      #8a6e52;   /* brun désaturé */
+  --text3:      #4a3824;   /* ombre */
+  --pixel: 2px;
+}
+
+/* Reset */
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html { scroll-behavior: smooth; }
+
+body {
+  font-family: 'VT323', monospace;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 18px;
+  line-height: 1.4;
+  min-height: 100vh;
+  overflow-x: hidden;
+  image-rendering: pixelated;
+}
+
+/* Scanlines overlay */
+body::after {
+  content: '';
+  position: fixed;
+  inset: 0;
+  background: repeating-linear-gradient(
+    0deg,
+    transparent,
+    transparent 2px,
+    rgba(0,0,0,0.03) 2px,
+    rgba(0,0,0,0.03) 4px
+  );
+  pointer-events: none;
+  z-index: 9999;
+}
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 6px; }
+::-webkit-scrollbar-track { background: var(--bg2); }
+::-webkit-scrollbar-thumb { background: var(--accent); }
+
+
+
+/* Grid background */
+.grid-bg {
+  background-image:
+    linear-gradient(var(--border) 1px, transparent 1px),
+    linear-gradient(90deg, var(--border) 1px, transparent 1px);
+  background-size: 32px 32px;
+}
+
+/* Blinking cursor */
+.cursor::after {
+  content: '█';
+  animation: cursor-blink 1s step-end infinite;
+}
+
+/* Tooltip */
+[data-tooltip] { position: relative; }
+[data-tooltip]:hover::after {
+  content: attr(data-tooltip);
+  position: absolute;
+  bottom: calc(100% + 6px);
+  left: 50%;
+  transform: translateX(-50%);
+  background: var(--bg);
+  border: 1px solid var(--border2);
+  color: var(--text);
+  font-size: 12px;
+  padding: 4px 8px;
+  white-space: nowrap;
+  z-index: 10;
+  pointer-events: none;
+}
+
+/* Keyframes */
+@keyframes fadeIn {
+  from { opacity: 0; transform: translateY(8px); }
+  to   { opacity: 1; transform: translateY(0); }
+}
+@keyframes float {
+  0%, 100% { transform: translateY(0); }
+  50%       { transform: translateY(-8px); }
+}
+@keyframes blink {
+  0%, 100% { opacity: 1; }
+  50%       { opacity: 0.5; }
+}
+@keyframes cursor-blink {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0; }
+}
+@keyframes dots {
+  0%   { content: ''; }
+  33%  { content: '.'; }
+  66%  { content: '..'; }
+  100% { content: '...'; }
+}

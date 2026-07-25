@@ -1,0 +1,200 @@
+/* ==============================================
+   LAYOUT — Grille app, header, sidebar, main,
+             status bar
+   ============================================== */
+
+/* App grid */
+#app {
+  display: grid;
+  grid-template-columns: 240px 1fr;
+  grid-template-rows: 56px 1fr;
+  grid-template-areas:
+    "header header"
+    "sidebar main";
+  min-height: 100vh;
+}
+
+@media (max-width: 768px) {
+  #app {
+    grid-template-columns: 1fr;
+    grid-template-areas:
+      "header"
+      "main";
+  }
+  #sidebar { display: none; }
+}
+
+/* ── Header ── */
+#header {
+  grid-area: header;
+  background: var(--bg2);
+  border-bottom: var(--pixel) solid var(--border2);
+  display: flex;
+  align-items: center;
+  padding: 0 20px;
+  gap: 16px;
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+#header .logo {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  text-decoration: none;
+}
+
+#header .logo img {
+  width: 36px;
+  height: 36px;
+  image-rendering: pixelated;
+}
+
+#header .logo-text {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 11px;
+  color: var(--primary-lt);
+  letter-spacing: 1px;
+}
+
+#header .logo-sub {
+  font-size: 10px;
+  color: var(--text3);
+}
+
+#header .spacer { flex: 1; }
+
+#header .env-badge {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  padding: 3px 8px;
+  background: rgba(107, 154, 94, 0.1);
+  border: 1px solid var(--green);
+  color: var(--green);
+}
+
+/* User info */
+#user-info {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 14px;
+}
+
+#user-avatar {
+  width: 32px;
+  height: 32px;
+  border: 2px solid var(--primary);
+  image-rendering: pixelated;
+  background: var(--bg3);
+}
+
+#user-name { color: var(--text); }
+#user-role {
+  font-size: 11px;
+  color: var(--primary-lt);
+}
+
+/* ── Sidebar ── */
+#sidebar {
+  grid-area: sidebar;
+  background: var(--bg2);
+  border-right: var(--pixel) solid var(--border2);
+  padding: 24px 0;
+  overflow-y: auto;
+}
+
+.nav-section { margin-bottom: 24px; }
+
+.nav-section-title {
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 10px;
+  color: var(--text3);
+  letter-spacing: 2px;
+  padding: 0 16px 8px;
+  text-transform: uppercase;
+}
+
+.nav-item {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 10px 16px;
+  cursor: pointer;
+  color: var(--text2);
+  font-size: 16px;
+  border-left: 3px solid transparent;
+  transition: all 0.1s;
+  user-select: none;
+}
+.nav-item:hover {
+  background: rgba(184, 133, 74, 0.08);
+  color: var(--text);
+  border-left-color: var(--primary);
+}
+.nav-item.active {
+  background: rgba(184, 133, 74, 0.13);
+  color: var(--primary-lt);
+  border-left-color: var(--primary);
+}
+
+.nav-icon {
+  width: 20px;
+  height: 20px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+}
+
+/* ── Main ── */
+#main {
+  grid-area: main;
+  overflow-y: auto;
+  padding: 32px;
+  padding-bottom: 48px; /* above status bar */
+}
+
+/* Views */
+.view { display: none; animation: fadeIn 0.2s ease; }
+.view.active { display: block; }
+
+.page-title {
+  font-family: 'Press Start 2P', monospace;
+  font-size: 14px;
+  color: var(--primary-lt);
+  margin-bottom: 6px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  border-bottom: 2px solid var(--border2);
+  padding-bottom: 10px;
+}
+
+.page-sub {
+  font-size: 15px;
+  color: var(--text3);
+  margin-bottom: 32px;
+}
+
+/* ── Status bar ── */
+.status-bar {
+  position: fixed;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: var(--bg2);
+  border-top: var(--pixel) solid var(--border2);
+  padding: 4px 16px;
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  font-family: 'Share Tech Mono', monospace;
+  font-size: 11px;
+  color: var(--text3);
+  z-index: 50;
+}
+.status-bar .sb-item { display: flex; align-items: center; gap: 6px; }
+.status-bar .sb-dot  { width: 6px; height: 6px; border-radius: 0; }
+#sb-clock { margin-left: auto; color: var(--text2); }
