@@ -117,7 +117,10 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
     let Some(return_to) = return_to else {
         return (
             jar,
-            (StatusCode::BAD_REQUEST, "Tentative de connexion invalide ou expirée."),
+            (
+                StatusCode::BAD_REQUEST,
+                "Tentative de connexion invalide ou expirée.",
+            ),
         )
             .into_response();
     };
@@ -132,7 +135,10 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
     let code = match query.code {
         Some(c) => c,
         None => {
-            return (jar, (StatusCode::BAD_REQUEST, "Code de connexion manquant."))
+            return (
+                jar,
+                (StatusCode::BAD_REQUEST, "Code de connexion manquant."),
+            )
                 .into_response();
         }
     };

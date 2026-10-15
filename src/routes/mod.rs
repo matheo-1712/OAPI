@@ -44,6 +44,18 @@ pub fn api_routes() -> Router {
     // Need authentication for these routes, so we apply the auth middleware to them.
     let protected_routes = Router::new()
         .route(
+            "/badges/me/refresh",
+            post(crate::handlers::badge_handler::refresh_mine),
+        )
+        .route(
+            "/badges/players/:player/refresh",
+            post(crate::handlers::badge_handler::refresh_player),
+        )
+        .route(
+            "/badges/discord/:user/refresh",
+            post(crate::handlers::badge_handler::refresh_discord),
+        )
+        .route(
             &routes.discord_summary,
             post(discord_handler::create_discord_summary_by_id),
         )
@@ -106,6 +118,9 @@ mod tests {
     async fn badge_writes_require_authentication() {
         config::init();
         for path in [
+            "/badges/me/refresh",
+            "/badges/players/player/refresh",
+            "/badges/discord/user/refresh",
             "/admin/badges/award",
             "/admin/badges/discord/user/evaluate",
             "/admin/badges/players/player/evaluate",

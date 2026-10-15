@@ -24,14 +24,18 @@ async fn verify_and_check_role(
     next: Next,
     required_roles: &[Role],
 ) -> Result<Response, (StatusCode, String)> {
-    if !request.method().is_safe() {
-        if let Some(origin) = request.headers().get(axum::http::header::ORIGIN) {
-            let expected = reqwest::Url::parse(&crate::config::Config::global().auth.discord_redirect_url)
+    if !request.method().is_safe()
+        && let Some(origin) = request.headers().get(axum::http::header::ORIGIN)
+    {
+        let expected =
+            reqwest::Url::parse(&crate::config::Config::global().auth.discord_redirect_url)
                 .map(|url| url.origin().ascii_serialization())
                 .unwrap_or_default();
-            if origin.to_str().ok() != Some(expected.as_str()) {
-                return Err((StatusCode::FORBIDDEN, "Cross-origin request rejected.".into()));
-            }
+        if origin.to_str().ok() != Some(expected.as_str()) {
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Cross-origin request rejected.".into(),
+            ));
         }
     }
     if let Some(claims) = jar

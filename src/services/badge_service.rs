@@ -25,6 +25,125 @@ pub struct AwardResult {
     pub created: bool,
 }
 
+#[derive(Serialize, ToSchema)]
+pub struct NewBadge {
+    pub id: String,
+    pub name: String,
+    pub description: String,
+    pub platform: String,
+    pub account: String,
+    pub image_url: Option<String>,
+}
+
+#[derive(Serialize, ToSchema)]
+pub struct RefreshResponse {
+    pub new_badges: Vec<NewBadge>,
+    pub accounts_checked: usize,
+    pub failed_accounts: Vec<String>,
+}
+
+/// Resolve every account from the session, never from browser-provided identifiers.
+pub async fn refresh_mine(
+    pb: &PocketbaseClient,
+    discord_id: &str,
+) -> Result<RefreshResponse, String> {
+    if !valid_id(discord_id) {
+        return Err("Invalid session identity".into());
+    }
+    let users = pb
+        .list_all_records::<Value>(
+            DISCORD_USERS_COLLECTION,
+            &format!("discord_id = '{discord_id}'"),
+        )
+        .await?;
+    let mut filter = format!("discord_user = '{discord_id}'");
+    let mut accounts = Vec::new();
+    for user in users {
+        let id = user["id"]
+            .as_str()
+            .filter(|id| valid_id(id))
+            .ok_or("Invalid stored user ID")?
+            .to_owned();
+        filter.push_str(&format!(" || discord_user = '{id}'"));
+        accounts.push((
+            RecipientKind::DiscordUser,
+            id,
+            user["username"].as_str().unwrap_or("Discord").to_owned(),
+        ));
+    }
+    let players = pb
+        .list_all_records::<Value>(MINECRAFT_PLAYERS_COLLECTION, &filter)
+        .await?;
+    for player in players {
+        let id = player["id"]
+            .as_str()
+            .filter(|id| valid_id(id))
+            .ok_or("Invalid stored player ID")?
+            .to_owned();
+        accounts.push((
+            RecipientKind::Player,
+            id,
+            player["playername"]
+                .as_str()
+                .unwrap_or("Minecraft")
+                .to_owned(),
+        ));
+    }
+    let badges = pb.list_all_records::<Value>(BADGES_COLLECTION, "").await?;
+    let mut response = RefreshResponse {
+        new_badges: Vec::new(),
+        accounts_checked: 0,
+        failed_accounts: Vec::new(),
+    };
+    for (kind, id, account) in accounts {
+        match evaluate_recipient(pb, &id, kind).await {
+            Ok(results) => {
+                response.accounts_checked += 1;
+                for result in results.into_iter().filter(|r| r.created) {
+                    let badge = badges
+                        .iter()
+                        .find(|b| b["id"].as_str() == Some(&result.badge))
+                        .ok_or("Badge metadata unavailable")?;
+                    let image = badge["image"].as_str().unwrap_or_default();
+                    let image_url = if image.is_empty() {
+                        None
+                    } else if let Ok(url) = reqwest::Url::parse(image) {
+                        matches!(url.scheme(), "http" | "https").then(|| url.to_string())
+                    } else {
+                        Some(format!(
+                            "{}/api/files/{}/{}/{}",
+                            crate::config::Config::global()
+                                .auth
+                                .pb_url
+                                .trim_end_matches('/'),
+                            BADGES_COLLECTION,
+                            result.badge,
+                            urlencoding::encode(image)
+                        ))
+                    };
+                    response.new_badges.push(NewBadge {
+                        id: result.badge,
+                        name: badge["name"].as_str().unwrap_or("Badge").into(),
+                        description: badge["description"].as_str().unwrap_or_default().into(),
+                        platform: match kind {
+                            RecipientKind::Player => "Minecraft",
+                            RecipientKind::DiscordUser => "Discord",
+                        }
+                        .into(),
+                        account: account.clone(),
+                        image_url,
+                    });
+                }
+            }
+            Err(error) => {
+                tracing::error!("Unable to refresh badges for {}: {}", id, error);
+                response.failed_accounts.push(account);
+            }
+        }
+    }
+    Ok(response)
+}
+
 #[derive(Deserialize)]
 #[serde(deny_unknown_fields)]
 struct Rule {
@@ -62,6 +181,13 @@ fn catalogue() -> Result<Vec<BadgeDefinition>, String> {
         .map_err(|e| format!("Invalid badges.yaml: {e}"))?;
     let mut ids = std::collections::HashSet::new();
     for badge in &catalogue.badges {
+        // Empty IDs are intentionally inactive while the catalogue is being filled.
+        if badge.id.as_deref() == Some("") && badge.name.is_none() && badge.name_prefix.is_none() {
+            if let Some(rule) = &badge.rule {
+                qualifies(rule, &[])?;
+            }
+            continue;
+        }
         let selectors = [
             badge.id.as_deref(),
             badge.name.as_deref(),
@@ -87,6 +213,10 @@ fn catalogue() -> Result<Vec<BadgeDefinition>, String> {
 }
 
 fn matches_badge(definition: &BadgeDefinition, badge: &Value) -> bool {
+    // IDs are authoritative; PocketBase platform labels may be absent or renamed.
+    if let Some(id) = &definition.id {
+        return badge["id"].as_str() == Some(id);
+    }
     let platform = match definition.kind {
         RecipientKind::Player => "Minecraft",
         RecipientKind::DiscordUser => "Discord",
@@ -96,9 +226,6 @@ fn matches_badge(definition: &BadgeDefinition, badge: &Value) -> bool {
         .is_some_and(|p| p.eq_ignore_ascii_case(platform))
     {
         return false;
-    }
-    if let Some(id) = &definition.id {
-        return badge["id"].as_str() == Some(id);
     }
     if let Some(name) = &definition.name {
         return badge["name"].as_str() == Some(name);
@@ -135,6 +262,49 @@ fn resolve_badge<'a>(
 
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|c| c.is_ascii_alphanumeric())
+}
+
+fn valid_account_id(id: &str) -> bool {
+    valid_id(id) || crate::services::image_service::valid_uuid(id)
+}
+
+/// A member may refresh their own accounts; administrators may refresh any account.
+pub(crate) async fn can_refresh(
+    pb: &PocketbaseClient,
+    recipient: &str,
+    kind: RecipientKind,
+    claims: &crate::models::JwtClaims,
+) -> Result<bool, String> {
+    if !valid_id(recipient) || !valid_id(&claims.sub) {
+        return Ok(false);
+    }
+    if claims.role == crate::models::Role::Admin {
+        return Ok(true);
+    }
+    let collection = match kind {
+        RecipientKind::Player => MINECRAFT_PLAYERS_COLLECTION,
+        RecipientKind::DiscordUser => DISCORD_USERS_COLLECTION,
+    };
+    let account = find(pb, collection, recipient).await?;
+    if kind == RecipientKind::DiscordUser {
+        return Ok(account["discord_id"].as_str() == Some(claims.sub.as_str()));
+    }
+    let linked_user = account["discord_user"].as_str().unwrap_or_default();
+    if linked_user.is_empty() {
+        return Ok(false);
+    }
+    if linked_user == claims.sub {
+        return Ok(true);
+    }
+    let users = pb
+        .list_all_records::<Value>(
+            DISCORD_USERS_COLLECTION,
+            &format!("discord_id = '{}'", claims.sub),
+        )
+        .await?;
+    Ok(users
+        .iter()
+        .any(|user| user["id"].as_str() == Some(linked_user)))
 }
 
 async fn find(pb: &PocketbaseClient, collection: &str, id: &str) -> Result<Value, String> {
@@ -211,7 +381,7 @@ pub async fn award(pb: &PocketbaseClient, request: AwardRequest) -> Result<Award
     let recipient = find(pb, collection, &request.recipient).await?;
     let alias = recipient[alias_field]
         .as_str()
-        .filter(|id| valid_id(id))
+        .filter(|id| valid_account_id(id))
         .unwrap_or(&request.recipient);
     persist(pb, field, &request.recipient, alias, &request.badge).await
 }
@@ -291,6 +461,15 @@ async fn evaluate_recipient(
     player_id: &str,
     kind: RecipientKind,
 ) -> Result<Vec<AwardResult>, String> {
+    evaluate_with_definitions(pb, player_id, kind, catalogue()?).await
+}
+
+async fn evaluate_with_definitions(
+    pb: &PocketbaseClient,
+    player_id: &str,
+    kind: RecipientKind,
+    definitions: Vec<BadgeDefinition>,
+) -> Result<Vec<AwardResult>, String> {
     let (collection, alias_field, stats_collection, stats_field, award_field) = match kind {
         RecipientKind::Player => (
             MINECRAFT_PLAYERS_COLLECTION,
@@ -310,15 +489,45 @@ async fn evaluate_recipient(
     let player = find(pb, collection, player_id).await?;
     let uuid = player[alias_field]
         .as_str()
-        .filter(|id| valid_id(id))
+        .filter(|id| valid_account_id(id))
         .ok_or("Invalid stored account ID")?;
+    let owned = pb
+        .list_all_records::<Value>(
+            DISCORD_USER_BADGES_COLLECTION,
+            &format!("{award_field} = '{player_id}' || {award_field} = '{uuid}'"),
+        )
+        .await?;
+    let owned: std::collections::HashSet<&str> = owned
+        .iter()
+        .filter_map(|record| record["badge"].as_str())
+        .collect();
+    let mut results = Vec::new();
+    let mut pending = Vec::new();
+    for definition in definitions {
+        if definition.kind != kind
+            || definition.rule.is_none()
+            || definition.id.as_deref() == Some("")
+        {
+            continue;
+        }
+        if let Some(id) = definition.id.as_deref().filter(|id| owned.contains(id)) {
+            results.push(AwardResult {
+                badge: id.into(),
+                created: false,
+            });
+            continue;
+        }
+        pending.push(definition);
+    }
+    if pending.is_empty() {
+        return Ok(results);
+    }
     let mut stats = pb
         .list_all_records::<Value>(
             stats_collection,
             &format!("{stats_field} = '{player_id}' || {stats_field} = '{uuid}'"),
         )
         .await?;
-    let definitions = catalogue()?;
     if kind == RecipientKind::DiscordUser {
         // Existing voice-channel evidence covers a first join even if its duration rounded to zero.
         for row in &mut stats {
@@ -343,15 +552,19 @@ async fn evaluate_recipient(
     let badges = pb.list_all_records::<Value>(BADGES_COLLECTION, "").await?;
     // Validate every rule before beginning writes.
     let mut eligible = Vec::new();
-    for definition in definitions {
-        if definition.kind != kind {
-            continue;
-        }
+    for definition in pending {
         let badge = resolve_badge(&definition, &badges)?;
         let id = badge["id"]
             .as_str()
             .filter(|id| valid_id(id))
             .ok_or("Invalid badge ID")?;
+        if owned.contains(id) {
+            results.push(AwardResult {
+                badge: id.into(),
+                created: false,
+            });
+            continue;
+        }
         let Some(rule) = definition.rule else {
             continue;
         };
@@ -359,11 +572,22 @@ async fn evaluate_recipient(
             eligible.push(id.to_owned());
         }
     }
-    let mut results = Vec::new();
     for badge in eligible {
         results.push(persist(pb, award_field, player_id, uuid, &badge).await?);
     }
     Ok(results)
+}
+
+#[cfg(test)]
+pub(crate) async fn evaluate_discord_fixture(
+    pb: &PocketbaseClient,
+    user_id: &str,
+) -> Result<Vec<AwardResult>, String> {
+    let mut definitions = catalogue()?;
+    for (index, definition) in definitions.iter_mut().enumerate() {
+        definition.id = Some(format!("badge{index}"));
+    }
+    evaluate_with_definitions(pb, user_id, RecipientKind::DiscordUser, definitions).await
 }
 
 #[cfg(test)]
@@ -442,21 +666,37 @@ mod tests {
     }
 
     #[test]
-    fn badge_resolution_scopes_platform_and_rejects_ambiguous_prefixes() {
-        let definitions = catalogue().unwrap();
-        let definition = definitions
-            .iter()
-            .find(|d| d.name_prefix.is_some())
-            .unwrap();
+    fn badge_resolution_uses_ids_without_requiring_platform_labels() {
+        let definition = &BadgeDefinition {
+            id: Some("one".into()),
+            name: None,
+            name_prefix: None,
+            kind: RecipientKind::Player,
+            rule: None,
+        };
         let badges = vec![
             json!({"id":"one", "name":"La Loutre qui ne touche pas d'eau non plus ...", "plateform":"Minecraft"}),
         ];
         assert_eq!(resolve_badge(definition, &badges).unwrap()["id"], "one");
+        assert!(
+            resolve_badge(
+                definition,
+                &[json!({"id":"one", "plateform":"discord-record-id"})]
+            )
+            .is_ok()
+        );
         let mut ambiguous = badges.clone();
         ambiguous.push(badges[0].clone());
         assert!(resolve_badge(definition, &ambiguous).is_err());
         let wrong_platform = vec![json!({"name": badges[0]["name"], "plateform":"Discord"})];
         assert!(resolve_badge(definition, &wrong_platform).is_err());
+    }
+    #[test]
+    fn minecraft_account_ids_accept_hyphenated_uuids_without_allowing_filter_injection() {
+        assert!(valid_account_id("12345678-1234-1234-1234-1234567890ab"));
+        assert!(valid_account_id("123456781234123412341234567890ab"));
+        assert!(!valid_account_id("uuid' || id != '"));
+        assert!(!valid_account_id(""));
     }
     #[test]
     fn thresholds_aggregate_and_can_scope_servers_and_json_keys() {

@@ -28,6 +28,9 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::badge_handler::award,
         handlers::badge_handler::evaluate,
         handlers::badge_handler::evaluate_discord,
+        handlers::badge_handler::refresh_player,
+        handlers::badge_handler::refresh_mine,
+        handlers::badge_handler::refresh_discord,
         handlers::investor_handler::get_stats,
         handlers::discord_handler::create_discord_summary_by_id,
         handlers::minecraft_handler::create_minecraft_summary_by_id,
@@ -37,6 +40,8 @@ use utoipa_swagger_ui::SwaggerUi;
     components(schemas(
         models::investor::InvestorStats,
         services::badge_service::AwardRequest,
+        services::badge_service::RefreshResponse,
+        services::badge_service::NewBadge,
         services::badge_service::AwardResult,
         services::badge_service::RecipientKind,
         models::ImageRequest,

@@ -116,7 +116,8 @@ fn calculate_minecraft_hash(player: &MinecraftPlayer) -> Result<String, String> 
         &player.badges,
         names,
         colors,
-    )).map_err(|e| format!("Unable to hash Minecraft profile: {}", e))?;
+    ))
+    .map_err(|e| format!("Unable to hash Minecraft profile: {}", e))?;
     hasher.update(data);
     Ok(format!("{:x}", hasher.finalize()))
 }
@@ -127,7 +128,8 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         return Err("Invalid player UUID in database".into());
     }
     let user_dir = Path::new(paths::MINECRAFT_SUMMARY_DIR).join(&player.account_id);
-    fs::create_dir_all(&user_dir).map_err(|e| format!("Unable to create image directory: {}", e))?;
+    fs::create_dir_all(&user_dir)
+        .map_err(|e| format!("Unable to create image directory: {}", e))?;
 
     let player_hash = calculate_minecraft_hash(&player)?;
     let file_name = format!("{}.png", player_hash);
@@ -425,7 +427,8 @@ pub async fn generate_discord_profile(user: DiscordUser) -> Result<ImageResponse
         return Err("Invalid Discord ID in database".into());
     }
     let user_dir = Path::new(paths::DISCORD_SUMMARY_DIR).join(&user.discord_id);
-    fs::create_dir_all(&user_dir).map_err(|e| format!("Unable to create image directory: {}", e))?;
+    fs::create_dir_all(&user_dir)
+        .map_err(|e| format!("Unable to create image directory: {}", e))?;
 
     let user_hash = calculate_user_hash(&user);
     let file_name = format!("{}.png", user_hash);
@@ -777,9 +780,13 @@ pub fn valid_discord_id(id: &str) -> bool {
 
 pub fn valid_uuid(uuid: &str) -> bool {
     let clean = uuid.replace('-', "");
-    clean.len() == 32 && clean.bytes().all(|c| c.is_ascii_hexdigit())
-        && (uuid.len() == 32 || (uuid.len() == 36
-            && [8, 13, 18, 23].iter().all(|&index| uuid.as_bytes()[index] == b'-')))
+    clean.len() == 32
+        && clean.bytes().all(|c| c.is_ascii_hexdigit())
+        && (uuid.len() == 32
+            || (uuid.len() == 36
+                && [8, 13, 18, 23]
+                    .iter()
+                    .all(|&index| uuid.as_bytes()[index] == b'-')))
 }
 
 /// Publish only complete PNGs. Keep earlier versions available for existing links.
@@ -787,11 +794,15 @@ fn persist_image(img: &RgbaImage, file_path: &Path) -> Result<(), String> {
     let nonce = oauth2::CsrfToken::new_random();
     let temporary = file_path.with_extension(format!("{}.tmp", nonce.secret()));
     let result = (|| {
-        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+        let mut file = fs::OpenOptions::new()
+            .write(true)
+            .create_new(true)
+            .open(&temporary)
             .map_err(|e| format!("Unable to create temporary image: {}", e))?;
         img.write_to(&mut file, image::ImageFormat::Png)
             .map_err(|e| format!("Unable to encode PNG: {}", e))?;
-        file.sync_all().map_err(|e| format!("Unable to flush PNG: {}", e))?;
+        file.sync_all()
+            .map_err(|e| format!("Unable to flush PNG: {}", e))?;
         drop(file);
         if let Err(error) = fs::rename(&temporary, file_path) {
             // Concurrent requests may have published the same complete cache entry on Windows.
@@ -801,10 +812,10 @@ fn persist_image(img: &RgbaImage, file_path: &Path) -> Result<(), String> {
         }
         Ok(())
     })();
-    if temporary.exists() {
-        if let Err(error) = fs::remove_file(&temporary) {
-            tracing::warn!("Unable to remove temporary image: {}", error);
-        }
+    if temporary.exists()
+        && let Err(error) = fs::remove_file(&temporary)
+    {
+        tracing::warn!("Unable to remove temporary image: {}", error);
     }
     result
 }
@@ -1029,7 +1040,8 @@ mod tests {
             "id": "player-record", "discord_user": "123", "platform": "java",
             "account_id": "123456781234123412341234567890ab", "playername": "Test",
             "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"
-        })).unwrap()
+        }))
+        .unwrap()
     }
 
     #[test]
@@ -1037,19 +1049,26 @@ mod tests {
         let baseline = minecraft_fixture();
         let baseline_hash = calculate_minecraft_hash(&baseline).unwrap();
         let mut changed = baseline.clone();
-        changed.server_names.insert("server".into(), "New name".into());
+        changed
+            .server_names
+            .insert("server".into(), "New name".into());
         assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
         let mut changed = baseline.clone();
-        changed.server_colors.insert("server".into(), "#ff0000".into());
+        changed
+            .server_colors
+            .insert("server".into(), "#ff0000".into());
         assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
         let mut changed = baseline.clone();
         changed.first_connected_at = "2024-01-01".into();
         assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
         let mut changed = baseline.clone();
-        changed.badges = Some(vec![serde_json::from_value(serde_json::json!({
-            "id": "earned", "player": "player-record", "badge": "badge",
-            "badge_info": {"id": "badge", "name": "Badge", "image": "badge.png"}
-        })).unwrap()]);
+        changed.badges = Some(vec![
+            serde_json::from_value(serde_json::json!({
+                "id": "earned", "player": "player-record", "badge": "badge",
+                "badge_info": {"id": "badge", "name": "Badge", "image": "badge.png"}
+            }))
+            .unwrap(),
+        ]);
         let badge_hash = calculate_minecraft_hash(&changed).unwrap();
         assert_ne!(baseline_hash, badge_hash);
         changed.badges.as_mut().unwrap()[0].badge_info.image = "updated.png".into();
@@ -1064,7 +1083,10 @@ mod tests {
         let mut second = minecraft_fixture();
         second.server_names.insert("b".into(), "B".into());
         second.server_names.insert("a".into(), "A".into());
-        assert_eq!(calculate_minecraft_hash(&first).unwrap(), calculate_minecraft_hash(&second).unwrap());
+        assert_eq!(
+            calculate_minecraft_hash(&first).unwrap(),
+            calculate_minecraft_hash(&second).unwrap()
+        );
     }
 
     #[test]

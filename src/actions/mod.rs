@@ -1,9 +1,9 @@
 #![allow(unused_imports)]
 
 pub mod auth_actions;
+pub mod discord_actions;
 pub mod image_access;
 pub mod investor_actions;
-pub mod discord_actions;
 pub mod minecraft_actions;
 pub mod monitoring_actions;
 

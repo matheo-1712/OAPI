@@ -5,10 +5,11 @@ référence un badge existant dans la collection PocketBase `badges`, avec
 `is_enabled = true`. Sans `rule`, le badge est manuel. Avec `rule`, il est
 attribuable uniquement après vérification des statistiques par l'API.
 
-Chaque entrée indique `kind: player` ou `kind: discord_user` et exactement un
-sélecteur : `id`, `name` ou `name_prefix`. Les noms sont associés à `plateform`
-(`Minecraft` / `Discord`). Un préfixe ambigu provoque une erreur ; aucun ID tronqué
-des captures n'est utilisé. Les badges doivent déjà exister dans PocketBase.
+Chaque entrée indique `kind: player` ou `kind: discord_user` et un `id` PocketBase
+à remplir. Le nom du badge reste en commentaire pour identifier le palier.
+Une entrée avec `id: ""` est inactive ; les autres entrées remplies fonctionnent
+normalement. Les badges doivent déjà exister dans PocketBase. Le champ `kind`
+du YAML distingue les badges Minecraft et Discord.
 Le fichier est relu à chaque demande. Les sélecteurs dupliqués, champs inconnus et
 règles invalides sont rejetés avant les écritures d'une évaluation.
 
@@ -27,6 +28,39 @@ tardive. Le badge « Une loutre qui ne prend pas de douche » est exclu.
 « Aventure sans fin » reste manuel en attendant l'identification du serveur Vanilla.
 
 ## Appels
+
+### Rafraîchissement par joueur
+
+Sur la page d'accueil, la section **Mes badges** propose **Rafraîchir mes badges**
+après connexion Discord. `POST /api/badges/me/refresh` retrouve les comptes depuis
+la session : compte Discord et joueurs Minecraft dont `discord_user` référence
+l'identifiant Discord ou son record PocketBase. Aucun ID n'est saisi côté navigateur.
+La réponse contient `new_badges` (nom, description, image et compte concerné),
+`accounts_checked` et `failed_accounts`. Les erreurs par compte sont signalées
+sans masquer les badges obtenus sur les autres comptes.
+
+Un membre connecté peut demander le recalcul des badges de ses propres comptes :
+
+- `POST /api/badges/players/{player}/refresh` pour Minecraft ;
+- `POST /api/badges/discord/{user}/refresh` pour Discord.
+
+Les exemples utilisent la base `/api`, à adapter à la configuration. Les IDs sont
+ceux des records PocketBase. Aucun corps de requête n'est nécessaire. La session
+`auth_token` est requise. L'API vérifie la propriété du compte ; un administrateur
+peut rafraîchir n'importe quel joueur. Minecraft accepte les liens `discord_user`
+stockés comme identifiant Discord ou comme relation vers le record Discord.
+
+Chaque appel relit les statistiques et les règles YAML, puis enregistre les badges
+éligibles manquants. La réponse est une liste `{ "badge": "ID", "created": true }` ;
+`created: false` indique un badge déjà obtenu. Les IDs vides et les badges désactivés
+ne sont pas attribués. Le rafraîchissement ne retire pas les badges acquis.
+Les badges déjà acquis sont chargés en une seule lecture et ignorés avant la
+résolution de leur définition et le calcul de leurs conditions. Un badge acquis
+supprimé du catalogue PocketBase ne bloque donc pas les autres attributions.
+La correspondance par ID ne dépend pas du libellé `plateform` ; `kind` dans le YAML
+détermine le type du destinataire. Les UUID Minecraft avec ou sans tirets sont acceptés.
+
+### Administration
 
 Les routes sont préfixées par la base API configurée et exigent une session Admin
 existante (`auth_token`). Après enregistrement des statistiques, le service appelant

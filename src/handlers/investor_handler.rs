@@ -1,5 +1,4 @@
 use crate::actions::investor_actions;
-use crate::models::investor::InvestorStats;
 use axum::{
     Json,
     http::{StatusCode, header},
@@ -14,7 +13,7 @@ use std::time::Duration;
     path = "/investor/stats",
     tag = "investor",
     responses(
-        (status = 200, description = "Current PocketBase record counts", body = InvestorStats),
+        (status = 200, description = "Current PocketBase record counts", body = crate::models::investor::InvestorStats),
         (status = 401, description = "Unauthenticated"),
         (status = 403, description = "Forbidden"),
         (status = 503, description = "Statistics temporarily unavailable")
