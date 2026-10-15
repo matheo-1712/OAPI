@@ -114,6 +114,7 @@
                     : result.accounts_checked === 0 ? 'Aucun compte lié trouvé pour le moment.'
                     : 'Vos badges sont à jour. Aucun nouveau badge pour le moment.';
                 if (result.failed_accounts.length) badgeStatus.textContent += ` Impossible de vérifier : ${result.failed_accounts.join(', ')}. Réessayez.`;
+                if (result.accounts_checked > 0) badgeStatus.textContent += ` ${result.accounts_checked} compte(s) vérifié(s).`;
             } catch (_) {
                 badgeStatus.textContent = 'Le rafraîchissement est indisponible. Réessayez dans un instant.';
             } finally {

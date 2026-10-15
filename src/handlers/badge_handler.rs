@@ -57,12 +57,34 @@ pub async fn refresh_player(
 
 #[utoipa::path(post, path = "/badges/discord/{user}/refresh", tag = "badges",
     params(("user" = String, Path, description = "PocketBase Discord user record ID")),
-    responses((status = 200, body = [AwardResult]), (status = 400, description = "Invalid ID"), (status = 401, description = "Authentication required"), (status = 403, description = "Account belongs to another user"), (status = 502, description = "Refresh failed")))]
+    responses((status = 200, body = badge_service::RefreshResponse), (status = 400, description = "Invalid ID"), (status = 401, description = "Authentication required"), (status = 403, description = "Account belongs to another user"), (status = 502, description = "Refresh failed")))]
 pub async fn refresh_discord(
     Path(user): Path<String>,
     Extension(claims): Extension<crate::models::JwtClaims>,
-) -> Result<Json<Vec<AwardResult>>, (StatusCode, String)> {
-    refresh_account(user, badge_service::RecipientKind::DiscordUser, claims).await
+) -> Result<Json<badge_service::RefreshResponse>, (StatusCode, String)> {
+    if !badge_service::valid_id(&user) {
+        return Err((StatusCode::BAD_REQUEST, "Invalid record ID".into()));
+    }
+    let mut pb = PocketbaseClient::new();
+    pb.login().await.map_err(failure)?;
+    if !badge_service::can_refresh(
+        &pb,
+        &user,
+        badge_service::RecipientKind::DiscordUser,
+        &claims,
+    )
+    .await
+    .map_err(failure)?
+    {
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Ce compte ne vous appartient pas.".into(),
+        ));
+    }
+    badge_service::refresh_discord_account(&pb, &user)
+        .await
+        .map(Json)
+        .map_err(failure)
 }
 
 fn failure(error: String) -> (StatusCode, String) {

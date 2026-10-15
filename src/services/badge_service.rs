@@ -42,6 +42,19 @@ pub struct RefreshResponse {
     pub failed_accounts: Vec<String>,
 }
 
+/// Refresh a Discord account together with all Minecraft accounts linked to it.
+pub async fn refresh_discord_account(
+    pb: &PocketbaseClient,
+    user_id: &str,
+) -> Result<RefreshResponse, String> {
+    let user = find(pb, DISCORD_USERS_COLLECTION, user_id).await?;
+    let discord_id = user["discord_id"]
+        .as_str()
+        .filter(|id| valid_id(id))
+        .ok_or("Invalid stored Discord ID")?;
+    refresh_mine(pb, discord_id).await
+}
+
 /// Resolve every account from the session, never from browser-provided identifiers.
 pub async fn refresh_mine(
     pb: &PocketbaseClient,

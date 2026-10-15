@@ -44,6 +44,13 @@ Un membre connecté peut demander le recalcul des badges de ses propres comptes 
 - `POST /api/badges/players/{player}/refresh` pour Minecraft ;
 - `POST /api/badges/discord/{user}/refresh` pour Discord.
 
+Le rafraîchissement Discord inclut systématiquement tous ses comptes Minecraft liés,
+comme le bouton de l'interface et `/badges/me/refresh`. Sa réponse est donc l'objet
+`RefreshResponse` (`new_badges`, `accounts_checked`, `failed_accounts`) pour les deux
+plateformes. Un administrateur qui cible un compte Discord rafraîchit les comptes
+liés de ce destinataire. La route Minecraft reste limitée au joueur ciblé et retourne
+une liste de résultats d'attribution.
+
 Les exemples utilisent la base `/api`, à adapter à la configuration. Les IDs sont
 ceux des records PocketBase. Aucun corps de requête n'est nécessaire. La session
 `auth_token` est requise. L'API vérifie la propriété du compte ; un administrateur
