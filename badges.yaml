@@ -1,0 +1,63 @@
+# Les noms sont résolus dans badges avec plateform Discord/Minecraft.
+# Un id PocketBase peut remplacer name/name_prefix.
+# Tous les paliers atteints sont attribués et conservés.
+badges:
+  - name: Message I
+    kind: discord_user
+    rule: { stat: message_count, minimum: 100 }
+  - name: Message II
+    kind: discord_user
+    rule: { stat: message_count, minimum: 1000 }
+  - name: Message III
+    kind: discord_user
+    rule: { stat: message_count, minimum: 3000 }
+  - name: Message IV
+    kind: discord_user
+    rule: { stat: message_count, minimum: 8000 }
+  - name: Message V
+    kind: discord_user
+    rule: { stat: message_count, minimum: 15000 }
+
+  # vocal_time : heures décimales, comme dans les graphiques.
+  - name: Vocal I
+    kind: discord_user
+    rule: { stat: voice_joined, minimum: 1 }
+  - name: Vocal II
+    kind: discord_user
+    rule: { stat: vocal_time, minimum: 100 }
+  - name: Vocal III
+    kind: discord_user
+    rule: { stat: vocal_time, minimum: 500 }
+  - name: Vocal IV
+    kind: discord_user
+    rule: { stat: vocal_time, minimum: 1000 }
+  - name: Vocal V
+    kind: discord_user
+    rule: { stat: vocal_time, minimum: 2000 }
+  - name: Bienvenue dans l'Antre
+    kind: discord_user
+    rule: { stat: membership, minimum: 1 }
+
+  # playtime : ticks Minecraft, 20 ticks/s = 72000 ticks/h.
+  - name: Première fois à l'eau
+    kind: player
+    rule: { stat: playtime, minimum: 72000 } # 1 h
+  - name: Petit pas pour l'Homme, grand pour la Loutre
+    kind: player
+    rule: { stat: playtime, minimum: 3600000 } # 50 h
+  - name: La Loutre qui ne touche pas d'herbe
+    kind: player
+    rule: { stat: playtime, minimum: 36000000 } # 500 h
+  # Nom tronqué sur la capture : préfixe unique obligatoire.
+  - name_prefix: La Loutre qui ne touche pas d'eau non plus
+    kind: player
+    rule: { stat: playtime, minimum: 72000000 } # 1000 h
+  - name: Migatte no Loutrui
+    kind: player
+    rule: { stat: playtime, minimum: 144000000 } # 2000 h
+
+  # Manuel en attendant l'identifiant exact du serveur Vanilla.
+  - name: Aventure sans fin
+    kind: player
+
+# « Une loutre qui ne prend pas de douche » est volontairement exclu.

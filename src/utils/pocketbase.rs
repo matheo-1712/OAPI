@@ -30,6 +30,33 @@ pub struct PocketbaseClient {
 }
 
 impl PocketbaseClient {
+    /// Creates a record using the API's authenticated PocketBase identity.
+    pub async fn create_record(
+        &self,
+        collection: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or("Pocketbase client not authenticated")?;
+        let response = reqwest::Client::new()
+            .post(format!(
+                "{}/api/collections/{}/records",
+                self.base_url, collection
+            ))
+            .header("Authorization", token)
+            .timeout(std::time::Duration::from_secs(10))
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("PocketBase create failed: {}", response.status()));
+        }
+        response.json().await.map_err(|e| e.to_string())
+    }
+
     /// Creates a new Pocketbase client using configuration.
     pub fn new() -> Self {
         let auth = &Config::global().auth;
@@ -207,10 +234,7 @@ impl PocketbaseClient {
         }
 
         let data = serde_json::from_str(&text).map_err(|e| {
-            error!(
-                "Failed to parse {} JSON: {}",
-                description, e
-            );
+            error!("Failed to parse {} JSON: {}", description, e);
             format!("Failed to parse {}: {}", description, e)
         })?;
 
@@ -225,6 +249,160 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
+    async fn discord_badge_evaluation_reads_stored_stats_and_retries_without_duplicate_writes() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("api-token".into()),
+        };
+        let page = |items: Vec<serde_json::Value>| {
+            serde_json::json!({
+                "page":1, "perPage":500, "totalPages":1, "totalItems":items.len(), "items":items
+            })
+            .to_string()
+        };
+        let user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded("filter".into(), "id = 'user'".into()))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"id":"user", "discord_id":"123", "joined_at":"2026-01-01"}),
+            ]))
+            .expect(2)
+            .create_async()
+            .await;
+        let stats = server
+            .mock("GET", "/api/collections/discord_user_stats/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = 'user' || discord_user = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"message_count":1000, "vocal_time":"100"}),
+            ]))
+            .expect(2)
+            .create_async()
+            .await;
+        let names = [
+            "Message I",
+            "Message II",
+            "Message III",
+            "Message IV",
+            "Message V",
+            "Vocal I",
+            "Vocal II",
+            "Vocal III",
+            "Vocal IV",
+            "Vocal V",
+            "Bienvenue dans l'Antre",
+        ];
+        let badges = server.mock("GET", "/api/collections/badges/records")
+            .match_query(Matcher::Any).with_status(200)
+            .with_body(page(names.iter().enumerate().map(|(i, name)| serde_json::json!({"id":format!("badge{i}"), "name":name, "plateform":"Discord", "is_enabled":true})).collect()))
+            .expect(2).create_async().await;
+        let mut reads = Vec::new();
+        let mut writes = Vec::new();
+        let expected = [0, 1, 5, 6, 10];
+        for i in expected {
+            reads.push(
+                server
+                    .mock("GET", "/api/collections/badges_earned/records")
+                    .match_query(Matcher::UrlEncoded(
+                        "filter".into(),
+                        format!(
+                            "(discord_user = 'user' || discord_user = '123') && badge = 'badge{i}'"
+                        ),
+                    ))
+                    .with_status(200)
+                    .with_body(page(vec![]))
+                    .create_async()
+                    .await,
+            );
+            writes.push(
+                server
+                    .mock("POST", "/api/collections/badges_earned/records")
+                    .match_header("authorization", "api-token")
+                    .match_body(Matcher::Json(
+                        serde_json::json!({"discord_user":"user", "badge":format!("badge{i}")}),
+                    ))
+                    .with_status(200)
+                    .with_header("content-type", "application/json")
+                    .with_body(r#"{"id":"earned"}"#)
+                    .create_async()
+                    .await,
+            );
+        }
+        let result = crate::services::badge_service::evaluate_discord(&pb, "user")
+            .await
+            .unwrap();
+        assert_eq!(result.len(), expected.len());
+        assert!(result.iter().all(|r| r.created));
+        for read in &reads {
+            read.assert_async().await;
+            read.remove_async().await;
+        }
+        reads.clear();
+        for i in expected {
+            reads.push(
+                server
+                    .mock("GET", "/api/collections/badges_earned/records")
+                    .match_query(Matcher::UrlEncoded(
+                        "filter".into(),
+                        format!(
+                            "(discord_user = 'user' || discord_user = '123') && badge = 'badge{i}'"
+                        ),
+                    ))
+                    .with_status(200)
+                    .with_body(page(vec![serde_json::json!({"id":"earned"})]))
+                    .create_async()
+                    .await,
+            );
+        }
+        let result = crate::services::badge_service::evaluate_discord(&pb, "user")
+            .await
+            .unwrap();
+        assert_eq!(result.len(), expected.len());
+        assert!(result.iter().all(|r| !r.created));
+        for mock in reads.iter().chain(writes.iter()) {
+            mock.assert_async().await;
+        }
+        user.assert_async().await;
+        stats.assert_async().await;
+        badges.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn badge_creation_authenticates_and_propagates_write_failures() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("api-token".into()),
+        };
+        for status in [200, 400] {
+            let write = server
+                .mock("POST", "/api/collections/badges_earned/records")
+                .match_header("authorization", "api-token")
+                .match_body(Matcher::Json(
+                    serde_json::json!({"player":"player", "badge":"badge"}),
+                ))
+                .with_status(status)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"id":"earned"}"#)
+                .create_async()
+                .await;
+            let result = pb
+                .create_record(
+                    "badges_earned",
+                    &serde_json::json!({"player":"player", "badge":"badge"}),
+                )
+                .await;
+            assert_eq!(result.is_ok(), status == 200);
+            write.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
     async fn minecraft_ownership_resolves_relations_and_denies_other_accounts() {
         let uuid = "123456781234123412341234567890ab";
         for (linked_user, actual_user, expected) in [
@@ -235,34 +413,54 @@ mod tests {
             let mut server = Server::new_async().await;
             let player = server
                 .mock("GET", "/api/collections/players/records")
-                .match_query(Matcher::UrlEncoded("filter".into(), format!("account_id = '{}'", uuid)))
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    format!("account_id = '{}'", uuid),
+                ))
                 .with_status(200)
-                .with_body(serde_json::json!({
-                    "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
-                    "items": [{"id": "player", "discord_user": linked_user,
-                        "account_id": uuid, "platform": "java", "playername": "Test",
-                        "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"}]
-                }).to_string())
-                .create_async().await;
+                .with_body(
+                    serde_json::json!({
+                        "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
+                        "items": [{"id": "player", "discord_user": linked_user,
+                            "account_id": uuid, "platform": "java", "playername": "Test",
+                            "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"}]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
             let _user = server
                 .mock("GET", "/api/collections/discord_users/records")
-                .match_query(Matcher::UrlEncoded("filter".into(), "discord_id = '123'".into()))
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    "discord_id = '123'".into(),
+                ))
                 .with_status(200)
-                .with_body(serde_json::json!({
-                    "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
-                    "items": [{"id": actual_user, "discord_id": "123", "username": "Test",
-                        "discord_tag": "Test", "joined_at": "2025-01-01"}]
-                }).to_string())
-                .create_async().await;
+                .with_body(
+                    serde_json::json!({
+                        "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
+                        "items": [{"id": actual_user, "discord_id": "123", "username": "Test",
+                            "discord_tag": "Test", "joined_at": "2025-01-01"}]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
             let client = PocketbaseClient {
-                base_url: server.url(), token: Some("test-token".into()),
+                base_url: server.url(),
+                token: Some("test-token".into()),
             };
             let claims = crate::models::JwtClaims {
-                sub: "123".into(), username: "Test".into(), role: crate::models::Role::Normal,
-                exp: usize::MAX, iat: 0,
+                sub: "123".into(),
+                username: "Test".into(),
+                role: crate::models::Role::Normal,
+                exp: usize::MAX,
+                iat: 0,
             };
             assert_eq!(
-                crate::actions::image_access::authorized_with_client(&client, uuid, &claims).await.unwrap(),
+                crate::actions::image_access::authorized_with_client(&client, uuid, &claims)
+                    .await
+                    .unwrap(),
                 expected,
             );
             player.assert_async().await;
@@ -271,7 +469,10 @@ mod tests {
 
     async fn mock_count(server: &mut Server, collection: &str, total: u32) -> mockito::Mock {
         server
-            .mock("GET", format!("/api/collections/{}/records", collection).as_str())
+            .mock(
+                "GET",
+                format!("/api/collections/{}/records", collection).as_str(),
+            )
             .match_header("authorization", "test-token")
             .match_query(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("page".into(), "1".into()),
@@ -281,10 +482,13 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(serde_json::json!({
-                "page": 1, "perPage": 1, "totalPages": total,
-                "totalItems": total, "items": []
-            }).to_string())
+            .with_body(
+                serde_json::json!({
+                    "page": 1, "perPage": 1, "totalPages": total,
+                    "totalItems": total, "items": []
+                })
+                .to_string(),
+            )
             .create_async()
             .await
     }

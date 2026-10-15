@@ -54,6 +54,18 @@ pub fn api_routes() -> Router {
         .route_layer(axum::middleware::from_fn(middleware::require_auth));
 
     let admin_routes = Router::new()
+        .route(
+            "/admin/badges/discord/:user/evaluate",
+            post(crate::handlers::badge_handler::evaluate_discord),
+        )
+        .route(
+            "/admin/badges/award",
+            post(crate::handlers::badge_handler::award),
+        )
+        .route(
+            "/admin/badges/players/:player/evaluate",
+            post(crate::handlers::badge_handler::evaluate),
+        )
         .route("/admin/users", get(admin_handler::get_all_users))
         .route_layer(axum::middleware::from_fn(middleware::require_admin));
 
@@ -91,6 +103,31 @@ mod tests {
     use tower::ServiceExt;
 
     #[tokio::test]
+    async fn badge_writes_require_authentication() {
+        config::init();
+        for path in [
+            "/admin/badges/award",
+            "/admin/badges/discord/user/evaluate",
+            "/admin/badges/players/player/evaluate",
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(path)
+                        .header("content-type", "application/json")
+                        .body(Body::from(
+                            r#"{"kind":"player","recipient":"player","badge":"badge"}"#,
+                        ))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+        }
+    }
+
+    #[tokio::test]
     async fn images_require_login_and_static_files_cannot_bypass_it() {
         config::init();
         let filename = format!("{}.png", "a".repeat(64));
@@ -113,7 +150,10 @@ mod tests {
         let response = app
             .oneshot(
                 Request::builder()
-                    .uri(format!("/GENERATED_IMAGES/discord_summary/123/{}", filename))
+                    .uri(format!(
+                        "/GENERATED_IMAGES/discord_summary/123/{}",
+                        filename
+                    ))
                     .body(Body::empty())
                     .unwrap(),
             )
