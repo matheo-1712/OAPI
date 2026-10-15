@@ -1,3 +1,4 @@
+pub mod badge_service;
 pub mod image_service;
 
 // Re-export for easier access if desired

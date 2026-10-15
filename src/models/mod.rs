@@ -1,7 +1,7 @@
 pub mod auth;
-pub mod investor;
 mod common;
 mod discord;
+pub mod investor;
 mod minecraft;
 pub mod monitoring;
 mod server;

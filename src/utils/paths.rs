@@ -10,9 +10,6 @@ mod tests {
 
     #[test]
     fn test_paths_defined() {
-        assert_eq!(
-            DISCORD_SUMMARY_DIR,
-            "generated_images/discord_summary"
-        );
+        assert_eq!(DISCORD_SUMMARY_DIR, "generated_images/discord_summary");
     }
 }

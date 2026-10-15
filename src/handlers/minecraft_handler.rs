@@ -42,7 +42,10 @@ pub async fn create_minecraft_summary_by_id(
     match crate::actions::image_access::can_access_minecraft(&uuid, &claims).await {
         Ok(true) => {}
         Ok(false) => {
-            return Err((StatusCode::FORBIDDEN, "Ce joueur ne vous appartient pas.".into()));
+            return Err((
+                StatusCode::FORBIDDEN,
+                "Ce joueur ne vous appartient pas.".into(),
+            ));
         }
         Err(error) => {
             error!("Unable to verify Minecraft ownership: {}", error);

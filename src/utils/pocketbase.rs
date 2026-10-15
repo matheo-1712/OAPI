@@ -30,6 +30,33 @@ pub struct PocketbaseClient {
 }
 
 impl PocketbaseClient {
+    /// Creates a record using the API's authenticated PocketBase identity.
+    pub async fn create_record(
+        &self,
+        collection: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or("Pocketbase client not authenticated")?;
+        let response = reqwest::Client::new()
+            .post(format!(
+                "{}/api/collections/{}/records",
+                self.base_url, collection
+            ))
+            .header("Authorization", token)
+            .timeout(std::time::Duration::from_secs(10))
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("PocketBase create failed: {}", response.status()));
+        }
+        response.json().await.map_err(|e| e.to_string())
+    }
+
     /// Creates a new Pocketbase client using configuration.
     pub fn new() -> Self {
         let auth = &Config::global().auth;
@@ -207,10 +234,7 @@ impl PocketbaseClient {
         }
 
         let data = serde_json::from_str(&text).map_err(|e| {
-            error!(
-                "Failed to parse {} JSON: {}",
-                description, e
-            );
+            error!("Failed to parse {} JSON: {}", description, e);
             format!("Failed to parse {}: {}", description, e)
         })?;
 
@@ -225,6 +249,441 @@ mod tests {
     use mockito::{Matcher, Server};
 
     #[tokio::test]
+    async fn discord_refresh_checks_discord_and_all_linked_minecraft_accounts() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("token".into()),
+        };
+        let page = |items: Vec<serde_json::Value>| {
+            serde_json::json!({"page":1,"perPage":500,"totalPages":1,"totalItems":items.len(),"items":items}).to_string()
+        };
+        let user_record =
+            serde_json::json!({"id":"owner", "discord_id":"123", "username":"Loutre"});
+        let user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded("filter".into(), "id = 'owner'".into()))
+            .with_status(200)
+            .with_body(page(vec![user_record.clone()]))
+            .expect(2)
+            .create_async()
+            .await;
+        let session_user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_id = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![user_record]))
+            .create_async()
+            .await;
+        let uuid = "12345678-1234-1234-1234-1234567890ab";
+        let player_records = vec![
+            serde_json::json!({"id":"java", "account_id":uuid, "discord_user":"owner", "playername":"JavaLoutre"}),
+            serde_json::json!({"id":"bedrock", "account_id":"456", "discord_user":"123", "playername":"BedrockLoutre"}),
+        ];
+        let players = server
+            .mock("GET", "/api/collections/players/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = '123' || discord_user = 'owner'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(player_records.clone()))
+            .create_async()
+            .await;
+        let mut player_lookups = Vec::new();
+        for player in player_records {
+            player_lookups.push(
+                server
+                    .mock("GET", "/api/collections/players/records")
+                    .match_query(Matcher::UrlEncoded(
+                        "filter".into(),
+                        format!("id = '{}'", player["id"].as_str().unwrap()),
+                    ))
+                    .with_status(200)
+                    .with_body(page(vec![player]))
+                    .create_async()
+                    .await,
+            );
+        }
+        // Already acquired badges still require all linked accounts to be visited.
+        let catalogue: serde_json::Value = config::Config::builder()
+            .add_source(config::File::new("badges.yaml", config::FileFormat::Yaml))
+            .build()
+            .unwrap()
+            .try_deserialize()
+            .unwrap();
+        let owned = catalogue["badges"]
+            .as_array()
+            .unwrap()
+            .iter()
+            .filter_map(|b| b["id"].as_str().filter(|id| !id.is_empty()))
+            .map(|id| serde_json::json!({"badge":id}))
+            .collect::<Vec<_>>();
+        let mut ownership_reads = Vec::new();
+        for filter in [
+            "discord_user = 'owner' || discord_user = '123'".to_owned(),
+            format!("player = 'java' || player = '{uuid}'"),
+            "player = 'bedrock' || player = '456'".into(),
+        ] {
+            ownership_reads.push(
+                server
+                    .mock("GET", "/api/collections/badges_earned/records")
+                    .match_query(Matcher::UrlEncoded("filter".into(), filter))
+                    .with_status(200)
+                    .with_body(page(owned.clone()))
+                    .create_async()
+                    .await,
+            );
+        }
+        let badges = server
+            .mock("GET", "/api/collections/badges/records")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(page(vec![]))
+            .create_async()
+            .await;
+        let response = crate::services::badge_service::refresh_discord_account(&pb, "owner")
+            .await
+            .unwrap();
+        assert_eq!(response.accounts_checked, 3);
+        assert!(response.failed_accounts.is_empty());
+        assert!(response.new_badges.is_empty());
+        for mock in [&user, &session_user, &players, &badges]
+            .into_iter()
+            .chain(player_lookups.iter())
+            .chain(ownership_reads.iter())
+        {
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn self_refresh_resolves_only_session_accounts_and_reports_partial_failures() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("token".into()),
+        };
+        let page = |items: Vec<serde_json::Value>| {
+            serde_json::json!({"page":1,"perPage":500,"totalPages":1,"totalItems":items.len(),"items":items}).to_string()
+        };
+        let user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_id = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"id":"own", "username":"Loutre"}),
+            ]))
+            .create_async()
+            .await;
+        let players = server
+            .mock("GET", "/api/collections/players/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = '123' || discord_user = 'own'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"id":"ownplayer", "playername":"MineLoutre"}),
+            ]))
+            .create_async()
+            .await;
+        let badges = server
+            .mock("GET", "/api/collections/badges/records")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(page(vec![]))
+            .create_async()
+            .await;
+        let failed_user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded("filter".into(), "id = 'own'".into()))
+            .with_status(503)
+            .create_async()
+            .await;
+        let failed_player = server
+            .mock("GET", "/api/collections/players/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "id = 'ownplayer'".into(),
+            ))
+            .with_status(503)
+            .create_async()
+            .await;
+        let response = crate::services::badge_service::refresh_mine(&pb, "123")
+            .await
+            .unwrap();
+        assert_eq!(response.accounts_checked, 0);
+        assert_eq!(response.failed_accounts, vec!["Loutre", "MineLoutre"]);
+        assert!(response.new_badges.is_empty());
+        assert!(
+            crate::services::badge_service::refresh_mine(&pb, "bad'")
+                .await
+                .is_err()
+        );
+        for mock in [&user, &players, &badges, &failed_user, &failed_player] {
+            mock.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn badge_refresh_checks_account_ownership_before_awarding() {
+        use crate::models::{JwtClaims, Role};
+        use crate::services::badge_service::{RecipientKind, can_refresh};
+        for (kind, account, expected, resolve_relation) in [
+            (
+                RecipientKind::DiscordUser,
+                serde_json::json!({"discord_id":"123"}),
+                true,
+                false,
+            ),
+            (
+                RecipientKind::DiscordUser,
+                serde_json::json!({"discord_id":"456"}),
+                false,
+                false,
+            ),
+            (
+                RecipientKind::Player,
+                serde_json::json!({"discord_user":"123"}),
+                true,
+                false,
+            ),
+            (
+                RecipientKind::Player,
+                serde_json::json!({"discord_user":"linked"}),
+                true,
+                true,
+            ),
+            (
+                RecipientKind::Player,
+                serde_json::json!({"discord_user":"other"}),
+                false,
+                true,
+            ),
+            (
+                RecipientKind::Player,
+                serde_json::json!({"discord_user":""}),
+                false,
+                false,
+            ),
+        ] {
+            let mut server = Server::new_async().await;
+            let pb = PocketbaseClient {
+                base_url: server.url(),
+                token: Some("token".into()),
+            };
+            let collection = if kind == RecipientKind::Player {
+                "players"
+            } else {
+                "discord_users"
+            };
+            let lookup = server.mock("GET", format!("/api/collections/{collection}/records").as_str())
+                .match_query(Matcher::UrlEncoded("filter".into(), "id = 'account'".into()))
+                .with_status(200).with_body(serde_json::json!({"page":1,"perPage":500,"totalPages":1,"totalItems":1,"items":[account]}).to_string()).create_async().await;
+            let relation = server.mock("GET", "/api/collections/discord_users/records")
+                .match_query(Matcher::UrlEncoded("filter".into(), "discord_id = '123'".into()))
+                .with_status(200).with_body(serde_json::json!({"page":1,"perPage":500,"totalPages":1,"totalItems":1,"items":[{"id":"linked"}]}).to_string())
+                .expect(usize::from(resolve_relation)).create_async().await;
+            let mut claims = JwtClaims {
+                sub: "123".into(),
+                username: "Test".into(),
+                role: Role::Normal,
+                exp: usize::MAX,
+                iat: 0,
+            };
+            assert_eq!(
+                can_refresh(&pb, "account", kind, &claims).await.unwrap(),
+                expected
+            );
+            claims.role = Role::Admin;
+            assert!(can_refresh(&pb, "account", kind, &claims).await.unwrap());
+            assert!(!can_refresh(&pb, "invalid'", kind, &claims).await.unwrap());
+            lookup.assert_async().await;
+            relation.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn discord_badge_evaluation_reads_stored_stats_and_retries_without_duplicate_writes() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("api-token".into()),
+        };
+        let page = |items: Vec<serde_json::Value>| {
+            serde_json::json!({
+                "page":1, "perPage":500, "totalPages":1, "totalItems":items.len(), "items":items
+            })
+            .to_string()
+        };
+        let user = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::UrlEncoded("filter".into(), "id = 'user'".into()))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"id":"user", "discord_id":"123", "joined_at":"2026-01-01"}),
+            ]))
+            .expect(2)
+            .create_async()
+            .await;
+        let stats = server
+            .mock("GET", "/api/collections/discord_user_stats/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = 'user' || discord_user = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![
+                serde_json::json!({"message_count":1000, "vocal_time":"100"}),
+            ]))
+            .expect(2)
+            .create_async()
+            .await;
+        let names = [
+            "Message I",
+            "Message II",
+            "Message III",
+            "Message IV",
+            "Message V",
+            "Vocal I",
+            "Vocal II",
+            "Vocal III",
+            "Vocal IV",
+            "Vocal V",
+            "Bienvenue dans l'Antre",
+        ];
+        let badges = server.mock("GET", "/api/collections/badges/records")
+            .match_query(Matcher::Any).with_status(200)
+            .with_body(page(names.iter().enumerate().map(|(i, name)| serde_json::json!({"id":format!("badge{i}"), "name":name, "plateform":"Discord", "is_enabled":true})).collect()))
+            .expect(1).create_async().await;
+        let mut reads = Vec::new();
+        let mut writes = Vec::new();
+        let expected = [0, 1, 5, 6, 10];
+        let owned = server
+            .mock("GET", "/api/collections/badges_earned/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = 'user' || discord_user = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(vec![]))
+            .create_async()
+            .await;
+        for i in expected {
+            reads.push(
+                server
+                    .mock("GET", "/api/collections/badges_earned/records")
+                    .match_query(Matcher::UrlEncoded(
+                        "filter".into(),
+                        format!(
+                            "(discord_user = 'user' || discord_user = '123') && badge = 'badge{i}'"
+                        ),
+                    ))
+                    .with_status(200)
+                    .with_body(page(vec![]))
+                    .create_async()
+                    .await,
+            );
+            writes.push(
+                server
+                    .mock("POST", "/api/collections/badges_earned/records")
+                    .match_header("authorization", "api-token")
+                    .match_body(Matcher::Json(
+                        serde_json::json!({"discord_user":"user", "badge":format!("badge{i}")}),
+                    ))
+                    .with_status(200)
+                    .with_header("content-type", "application/json")
+                    .with_body(r#"{"id":"earned"}"#)
+                    .create_async()
+                    .await,
+            );
+        }
+        let result = crate::services::badge_service::evaluate_discord_fixture(&pb, "user")
+            .await
+            .unwrap();
+        assert_eq!(result.len(), expected.len());
+        assert!(result.iter().all(|r| r.created));
+        badges.assert_async().await;
+        badges.remove_async().await;
+        owned.assert_async().await;
+        owned.remove_async().await;
+        for read in &reads {
+            read.assert_async().await;
+            read.remove_async().await;
+        }
+        reads.clear();
+        // Already owned badges can even be absent from the catalogue without blocking refresh.
+        let badges = server.mock("GET", "/api/collections/badges/records")
+            .match_query(Matcher::Any).with_status(200)
+            .with_body(page(names.iter().enumerate().filter(|(i, _)| !expected.contains(i)).map(|(i, name)| serde_json::json!({"id":format!("badge{i}"), "name":name, "is_enabled":true})).collect()))
+            .create_async().await;
+        let owned = server
+            .mock("GET", "/api/collections/badges_earned/records")
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_user = 'user' || discord_user = '123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(
+                expected
+                    .iter()
+                    .map(|i| serde_json::json!({"badge":format!("badge{i}")}))
+                    .collect(),
+            ))
+            .create_async()
+            .await;
+        let result = crate::services::badge_service::evaluate_discord_fixture(&pb, "user")
+            .await
+            .unwrap();
+        assert_eq!(result.len(), expected.len());
+        assert!(result.iter().all(|r| !r.created));
+        owned.assert_async().await;
+        for mock in reads.iter().chain(writes.iter()) {
+            mock.assert_async().await;
+        }
+        user.assert_async().await;
+        stats.assert_async().await;
+        badges.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn badge_creation_authenticates_and_propagates_write_failures() {
+        let mut server = Server::new_async().await;
+        let pb = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("api-token".into()),
+        };
+        for status in [200, 400] {
+            let write = server
+                .mock("POST", "/api/collections/badges_earned/records")
+                .match_header("authorization", "api-token")
+                .match_body(Matcher::Json(
+                    serde_json::json!({"player":"player", "badge":"badge"}),
+                ))
+                .with_status(status)
+                .with_header("content-type", "application/json")
+                .with_body(r#"{"id":"earned"}"#)
+                .create_async()
+                .await;
+            let result = pb
+                .create_record(
+                    "badges_earned",
+                    &serde_json::json!({"player":"player", "badge":"badge"}),
+                )
+                .await;
+            assert_eq!(result.is_ok(), status == 200);
+            write.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
     async fn minecraft_ownership_resolves_relations_and_denies_other_accounts() {
         let uuid = "123456781234123412341234567890ab";
         for (linked_user, actual_user, expected) in [
@@ -235,34 +694,54 @@ mod tests {
             let mut server = Server::new_async().await;
             let player = server
                 .mock("GET", "/api/collections/players/records")
-                .match_query(Matcher::UrlEncoded("filter".into(), format!("account_id = '{}'", uuid)))
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    format!("account_id = '{}'", uuid),
+                ))
                 .with_status(200)
-                .with_body(serde_json::json!({
-                    "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
-                    "items": [{"id": "player", "discord_user": linked_user,
-                        "account_id": uuid, "platform": "java", "playername": "Test",
-                        "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"}]
-                }).to_string())
-                .create_async().await;
+                .with_body(
+                    serde_json::json!({
+                        "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
+                        "items": [{"id": "player", "discord_user": linked_user,
+                            "account_id": uuid, "platform": "java", "playername": "Test",
+                            "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"}]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
             let _user = server
                 .mock("GET", "/api/collections/discord_users/records")
-                .match_query(Matcher::UrlEncoded("filter".into(), "discord_id = '123'".into()))
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    "discord_id = '123'".into(),
+                ))
                 .with_status(200)
-                .with_body(serde_json::json!({
-                    "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
-                    "items": [{"id": actual_user, "discord_id": "123", "username": "Test",
-                        "discord_tag": "Test", "joined_at": "2025-01-01"}]
-                }).to_string())
-                .create_async().await;
+                .with_body(
+                    serde_json::json!({
+                        "page": 1, "perPage": 500, "totalPages": 1, "totalItems": 1,
+                        "items": [{"id": actual_user, "discord_id": "123", "username": "Test",
+                            "discord_tag": "Test", "joined_at": "2025-01-01"}]
+                    })
+                    .to_string(),
+                )
+                .create_async()
+                .await;
             let client = PocketbaseClient {
-                base_url: server.url(), token: Some("test-token".into()),
+                base_url: server.url(),
+                token: Some("test-token".into()),
             };
             let claims = crate::models::JwtClaims {
-                sub: "123".into(), username: "Test".into(), role: crate::models::Role::Normal,
-                exp: usize::MAX, iat: 0,
+                sub: "123".into(),
+                username: "Test".into(),
+                role: crate::models::Role::Normal,
+                exp: usize::MAX,
+                iat: 0,
             };
             assert_eq!(
-                crate::actions::image_access::authorized_with_client(&client, uuid, &claims).await.unwrap(),
+                crate::actions::image_access::authorized_with_client(&client, uuid, &claims)
+                    .await
+                    .unwrap(),
                 expected,
             );
             player.assert_async().await;
@@ -271,7 +750,10 @@ mod tests {
 
     async fn mock_count(server: &mut Server, collection: &str, total: u32) -> mockito::Mock {
         server
-            .mock("GET", format!("/api/collections/{}/records", collection).as_str())
+            .mock(
+                "GET",
+                format!("/api/collections/{}/records", collection).as_str(),
+            )
             .match_header("authorization", "test-token")
             .match_query(Matcher::AllOf(vec![
                 Matcher::UrlEncoded("page".into(), "1".into()),
@@ -281,10 +763,13 @@ mod tests {
             ]))
             .with_status(200)
             .with_header("content-type", "application/json")
-            .with_body(serde_json::json!({
-                "page": 1, "perPage": 1, "totalPages": total,
-                "totalItems": total, "items": []
-            }).to_string())
+            .with_body(
+                serde_json::json!({
+                    "page": 1, "perPage": 1, "totalPages": total,
+                    "totalItems": total, "items": []
+                })
+                .to_string(),
+            )
             .create_async()
             .await
     }

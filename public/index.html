@@ -17,11 +17,32 @@
         nav strong { display: block; font-size: 1.2rem; }
         nav span { display: block; color: #cbd5e1; margin-top: 10px; line-height: 1.5; }
         section { margin-top: 24px; }
+        [hidden] { display: none !important; }
+        button { background: #6ee7b7; color: #0f172a; border: 0; border-radius: 8px; padding: 12px 18px; font: inherit; font-weight: 700; cursor: pointer; }
+        button:disabled { opacity: .6; cursor: wait; }
+        button:focus-visible { outline: 3px solid #f8fafc; outline-offset: 4px; }
+        .badge-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(210px, 1fr)); gap: 16px; padding: 0; list-style: none; }
+        .badge-card { padding: 18px; border: 1px solid #6ee7b7; border-radius: 10px; background: #0f172a; }
+        .badge-card img { width: 64px; height: 64px; object-fit: contain; }
+        .badge-card h3 { margin: 12px 0 4px; }
+        .badge-card p { margin: 6px 0; }
+        .badge-account { font-size: .85rem; color: #6ee7b7; }
     </style>
 </head>
 <body>
     <header><h1>OAPI</h1><p>Les outils de la communauté Antre des Loutres.</p></header>
     <main>
+        <section aria-labelledby="badges-title">
+            <h2 id="badges-title">Mes badges</h2>
+            <p id="badge-session" role="status">Vérification de votre connexion…</p>
+            <a id="badge-login" href="/api/auth/login?return_to=/" hidden>Se connecter avec Discord</a>
+            <div id="badge-controls" hidden>
+                <p>Retrouvez les badges débloqués par votre activité Discord et vos comptes Minecraft liés.</p>
+                <button id="refresh-badges" type="button" disabled>Rafraîchir mes badges</button>
+            </div>
+            <p id="badge-status" role="status" aria-live="polite"></p>
+            <ul id="new-badges" class="badge-grid" aria-label="Nouveaux badges obtenus"></ul>
+        </section>
         <nav aria-label="Services">
             <a href="/monitoring.html"><strong>Monitoring</strong><span>Consulter la disponibilité des bots, serveurs Minecraft et services.</span></a>
             <a href="/investor.html"><strong>Espace investisseur</strong><span>Consulter les compteurs communautaires. Accès LoutreInvesti ou administrateur.</span></a>
@@ -34,5 +55,92 @@
             <a href="/api/auth/login?return_to=/">Se connecter avec Discord</a>
         </section>
     </main>
+    <script>
+        const badgeButton = document.getElementById('refresh-badges');
+        const badgeStatus = document.getElementById('badge-status');
+        const badgeList = document.getElementById('new-badges');
+        const badgeLogin = document.getElementById('badge-login');
+        const badgeControls = document.getElementById('badge-controls');
+
+        function showNewBadge(badge) {
+            const card = document.createElement('li');
+            card.className = 'badge-card';
+            if (badge.image_url) {
+                try {
+                    const url = new URL(badge.image_url, location.origin);
+                    if (['http:', 'https:'].includes(url.protocol)) {
+                        const image = document.createElement('img');
+                        image.src = url.href;
+                        image.alt = '';
+                        image.loading = 'lazy';
+                        image.referrerPolicy = 'no-referrer';
+                        image.addEventListener('error', () => { image.hidden = true; });
+                        card.append(image);
+                    }
+                } catch (_) { /* Keep the badge text if its image is unavailable. */ }
+            }
+            const title = document.createElement('h3');
+            title.textContent = badge.name;
+            const description = document.createElement('p');
+            description.textContent = badge.description;
+            const account = document.createElement('p');
+            account.className = 'badge-account';
+            account.textContent = `${badge.platform} · ${badge.account}`;
+            card.append(title, description, account);
+            badgeList.append(card);
+        }
+
+        async function refreshBadges() {
+            badgeButton.disabled = true;
+            badgeButton.textContent = 'Vérification en cours…';
+            badgeStatus.textContent = 'Vérification de vos statistiques Discord et Minecraft…';
+            badgeList.setAttribute('aria-busy', 'true');
+            try {
+                const response = await fetch('/api/badges/me/refresh', { method: 'POST', credentials: 'same-origin', cache: 'no-store' });
+                if (response.status === 401) {
+                    badgeControls.hidden = true;
+                    badgeLogin.hidden = false;
+                    badgeStatus.textContent = 'Votre session a expiré. Reconnectez-vous pour rafraîchir vos badges.';
+                    return;
+                }
+                if (!response.ok) throw new Error('Refresh failed');
+                const result = await response.json();
+                if (!Array.isArray(result.new_badges) || !Array.isArray(result.failed_accounts) || !Number.isInteger(result.accounts_checked)) throw new Error('Invalid response');
+                badgeList.replaceChildren();
+                result.new_badges.forEach(showNewBadge);
+                badgeStatus.textContent = result.new_badges.length
+                    ? `${result.new_badges.length} nouveau(x) badge(s) obtenu(s) !`
+                    : result.failed_accounts.length ? 'Le rafraîchissement est incomplet.'
+                    : result.accounts_checked === 0 ? 'Aucun compte lié trouvé pour le moment.'
+                    : 'Vos badges sont à jour. Aucun nouveau badge pour le moment.';
+                if (result.failed_accounts.length) badgeStatus.textContent += ` Impossible de vérifier : ${result.failed_accounts.join(', ')}. Réessayez.`;
+                if (result.accounts_checked > 0) badgeStatus.textContent += ` ${result.accounts_checked} compte(s) vérifié(s).`;
+            } catch (_) {
+                badgeStatus.textContent = 'Le rafraîchissement est indisponible. Réessayez dans un instant.';
+            } finally {
+                badgeButton.disabled = false;
+                badgeButton.textContent = 'Rafraîchir mes badges';
+                badgeList.setAttribute('aria-busy', 'false');
+            }
+        }
+
+        badgeButton.addEventListener('click', refreshBadges);
+        async function loadBadgeSession() {
+            try {
+                const response = await fetch('/api/auth/me', { credentials: 'same-origin', cache: 'no-store' });
+                if (!response.ok) throw new Error('Session unavailable');
+                const session = await response.json();
+                badgeControls.hidden = !session.authenticated;
+                badgeLogin.hidden = Boolean(session.authenticated);
+                badgeButton.disabled = !session.authenticated;
+                document.getElementById('badge-session').textContent = session.authenticated
+                    ? `Connecté en tant que ${session.username}.` : 'Connectez-vous pour découvrir vos nouveaux badges.';
+            } catch (_) {
+                document.getElementById('badge-session').textContent = 'Connexion indisponible. Rechargez la page pour réessayer.';
+                badgeLogin.hidden = false;
+            }
+        }
+        loadBadgeSession();
+    </script>
 </body>
 </html>

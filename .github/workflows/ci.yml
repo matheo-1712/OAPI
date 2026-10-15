@@ -1,6 +1,7 @@
 name: Rust CI
 
 on:
+  workflow_dispatch:
   push:
     branches: [ "master", "feat/*" ]
   pull_request:
@@ -44,8 +45,8 @@ jobs:
         uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Run tests
         run: cargo test --all-features --verbose
-      - name: Test investor page
-        run: node --test tests/investor_page.test.cjs
+      - name: Test web pages
+        run: node --test tests/*.test.cjs
 
   build:
     name: Build
