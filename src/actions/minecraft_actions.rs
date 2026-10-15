@@ -13,8 +13,7 @@ use tracing::{debug, error, warn};
 /// Orchestrates the process of fetching Minecraft data and generating a summary image.
 pub async fn get_minecraft_summary_action(id: &str) -> Result<ImageResponse, String> {
     let player = fetch_minecraft_data(id).await?;
-    let response = services::generate_minecraft_profile(player).await;
-    Ok(response)
+    services::generate_minecraft_profile(player).await
 }
 
 /// Private helper to aggregate Minecraft player info and stats from PocketBase.

@@ -149,6 +149,11 @@
     </div>
 
     <script>
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, character => ({
+                '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
+            })[character]);
+        }
         document.addEventListener('DOMContentLoaded', () => {
             fetch('/api/auth/me')
                 .then(response => response.json())
@@ -168,16 +173,16 @@
                                 ● Connecté
                             </div>
                             
-                            <h2>Bienvenue, ${data.username}</h2>
+                            <h2>Bienvenue, ${escapeHtml(data.username)}</h2>
                             
                             <div class="user-info">
                                 <div class="info-row">
                                     <span class="info-label">Identité Discord</span>
-                                    <span class="info-value">@${data.username}</span>
+                                    <span class="info-value">@${escapeHtml(data.username)}</span>
                                 </div>
                                 <div class="info-row">
                                     <span class="info-label">Niveau d'Accréditation</span>
-                                    <span class="info-value"><span class="role-badge">${roleStr}</span></span>
+                                    <span class="info-value"><span class="role-badge">${escapeHtml(roleStr)}</span></span>
                                 </div>
                             </div>
                             
@@ -202,7 +207,7 @@
                                     if (Array.isArray(users)) {
                                         users.forEach(u => {
                                             html += `<tr style="border-bottom: 1px solid rgba(255,255,255,0.05);">
-                                                <td style="padding: 8px; color: var(--accent); font-family: monospace;">${u.discord_id || 'Inconnu'}</td>
+                                                <td style="padding: 8px; color: var(--accent); font-family: monospace;">${escapeHtml(u.discord_id || 'Inconnu')}</td>
                                                 <td style="padding: 8px;">${u.is_verified ? '<span style="color:var(--success)">Oui</span>' : '<span style="color:var(--danger)">Non</span>'}</td>
                                                 <td style="padding: 8px;">${u.is_admin ? '⭐ Admin' : '-'}</td>
                                             </tr>`;

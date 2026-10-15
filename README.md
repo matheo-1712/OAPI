@@ -29,6 +29,13 @@ A robust data layer powered by PocketBase.
 - **Exhaustive Fetching**: Custom pagination logic to retrieve complete historical data.
 - **Automatic Documentation**: Fully compliant OpenAPI 3.0 spec generated via `utoipa`.
 
+### Investor Dashboard
+- Restricted to `LoutreInvesti` and `Admin` accounts.
+- Displays current PocketBase record counts: Discord accounts, Minecraft players, Minecraft servers, and awarded badges.
+- Counts describe stored records, not active users or live server availability. They are queried on page load or manual refresh, with a UTC retrieval timestamp.
+- Database failures return HTTP 503 instead of fabricated or partial statistics. Responses use `Cache-Control: no-store`.
+- Frontend regression checks: `node --test tests/investor_page.test.cjs`.
+
 ---
 
 ## 🏗 Architecture
@@ -71,6 +78,17 @@ cd OAPI
 # Run in development mode
 cargo run
 ```
+
+Before starting, copy `.env.example` to `.env`, supply the PocketBase and Discord credentials,
+and set `JWT_SECRET` to a cryptographically random value of at least 32 bytes. Startup rejects
+missing or short secrets. Production requires `OAPI_ENV=production`, an HTTPS Discord callback
+URL and TLS termination on the reverse proxy. Session cookies are HttpOnly and SameSite=Lax.
+
+Generated PNGs are stored in `generated_images/`, outside `public/`. Their URLs require the
+owner's session or an administrator session, including for Minecraft profiles. Existing files
+under `public/generated_images/` are no longer served; regenerate profiles after upgrading.
+Image publication is atomic and reports write failures. Previous cache entries are retained to
+avoid breaking concurrent downloads; disk retention should be managed separately.
 
 ### Accessing the API
 - **Swagger UI**: [http://localhost:3000/swagger-ui](http://localhost:3000/swagger-ui)

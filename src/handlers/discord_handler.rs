@@ -18,6 +18,9 @@ use tracing::{error, info};
     path = "/discord-summary/{id}",
     responses(
         (status = 200, description = "Discord summary image generated successfully", body = ImageResponse),
+        (status = 400, description = "Invalid Discord ID"),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "User belongs to another account"),
         (status = 500, description = "Internal server error")
     ),
     params(
@@ -29,6 +32,9 @@ pub async fn create_discord_summary_by_id(
     Path(id): Path<String>,
     Extension(claims): Extension<JwtClaims>,
 ) -> Result<Json<ImageResponse>, (StatusCode, String)> {
+    if !crate::services::image_service::valid_discord_id(&id) {
+        return Err((StatusCode::BAD_REQUEST, "Invalid Discord ID".into()));
+    }
     if claims.sub != id && claims.role != Role::Admin {
         error!(
             "User {} (ID: {}) attempted to generate Discord summary for another user (ID: {})",
@@ -50,7 +56,10 @@ pub async fn create_discord_summary_by_id(
         Ok(response) => Ok(Json(response)),
         Err(e) => {
             error!("Action failed: {}", e);
-            Err((StatusCode::INTERNAL_SERVER_ERROR, e))
+            Err((
+                StatusCode::INTERNAL_SERVER_ERROR,
+                "Impossible de générer l’image.".into(),
+            ))
         }
     }
 }

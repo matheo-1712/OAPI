@@ -8,10 +8,10 @@ Le service de génération d'images (`src/services/image_service.rs`) crée dyna
 
 Le service utilise un cache intelligent pour minimiser l'utilisation du CPU et de la bande passante.
 
-1.  **Organisation** : Les images sont stockées dans `public/generated_images/` dans des sous-dossiers spécifiques (`discord_summary/` ou `minecraft_summary/`) par identifiant unique (`discord_id` ou `account_id`).
+1.  **Organisation** : Les images sont stockées dans `generated_images/` dans des sous-dossiers spécifiques (`discord_summary/` ou `minecraft_summary/`) par identifiant unique (`discord_id` ou `account_id`).
 2.  **Hash de Contenu** : Un hash SHA-256 est généré à partir de **toutes les données** du profil (pseudo, statistiques, badges, serveurs).
 3.  **Vérification** : Si le fichier `{hash}.png` existe, il est servi immédiatement.
-4.  **Auto-nettoyage** : Lorsqu'une nouvelle image est générée (données modifiées), le dossier de l'utilisateur est vidé pour ne conserver que la version la plus récente.
+4.  **Écriture atomique** : le PNG temporaire est finalisé avant publication. Les erreurs remontent au client ; les versions précédentes restent disponibles pour les téléchargements concurrents.
 
 ---
 
@@ -38,6 +38,8 @@ Le service utilise un cache intelligent pour minimiser l'utilisation du CPU et d
 
 ---
 
-## URLs Publiques
+## URLs protégées
 Les chemins retournés par l'API sont prêts à être utilisés dans un tag `<img>` :
 `/generated_images/minecraft_summary/{uuid}/{hash}.png`
+
+Images require the owner or administrator session. Cache-Control: no-store.

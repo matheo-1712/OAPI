@@ -13,7 +13,7 @@ use crate::utils::{formatters, paths};
 use image::{Rgba, RgbaImage, imageops::FilterType};
 use rusttype::{Font, Scale};
 use sha2::{Digest, Sha256};
-use std::collections::HashMap;
+use std::collections::{BTreeMap, HashMap};
 use std::fs;
 use std::path::Path;
 
@@ -100,33 +100,36 @@ fn calculate_user_hash(user: &DiscordUser) -> String {
 }
 
 /// Generate a unique SHA-256 hash for the Minecraft player state.
-fn calculate_minecraft_hash(player: &MinecraftPlayer) -> String {
+fn calculate_minecraft_hash(player: &MinecraftPlayer) -> Result<String, String> {
     let mut hasher = Sha256::new();
-
-    hasher.update(player.playername.as_bytes());
-    hasher.update(player.platform.as_bytes());
-    hasher.update(player.account_id.as_bytes());
-
-    for stat in &player.stats {
-        hasher.update(stat.server.as_bytes());
-        hasher.update(stat.playtime.to_be_bytes());
-        hasher.update(stat.deaths.to_be_bytes());
-        hasher.update(stat.mob_kills.to_be_bytes());
-        hasher.update(stat.player_kills.to_be_bytes());
-        hasher.update(stat.blocks_mined.to_be_bytes());
-        hasher.update(stat.blocks_placed.to_be_bytes());
-        hasher.update(stat.total_distance.to_be_bytes());
-    }
-
-    format!("{:x}", hasher.finalize())
+    let names: BTreeMap<_, _> = player.server_names.iter().collect();
+    let colors: BTreeMap<_, _> = player.server_colors.iter().collect();
+    // Version the rendering inputs and sort maps so insertion order cannot affect the key.
+    let data = serde_json::to_vec(&(
+        "minecraft-card-v2",
+        &player.account_id,
+        &player.playername,
+        &player.platform,
+        &player.first_connected_at,
+        &player.last_connected_at,
+        &player.stats,
+        &player.badges,
+        names,
+        colors,
+    )).map_err(|e| format!("Unable to hash Minecraft profile: {}", e))?;
+    hasher.update(data);
+    Ok(format!("{:x}", hasher.finalize()))
 }
 
 /// Service for generating a Minecraft profile image summary.
-pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageResponse {
+pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<ImageResponse, String> {
+    if !valid_uuid(&player.account_id) {
+        return Err("Invalid player UUID in database".into());
+    }
     let user_dir = Path::new(paths::MINECRAFT_SUMMARY_DIR).join(&player.account_id);
-    let _ = fs::create_dir_all(&user_dir);
+    fs::create_dir_all(&user_dir).map_err(|e| format!("Unable to create image directory: {}", e))?;
 
-    let player_hash = calculate_minecraft_hash(&player);
+    let player_hash = calculate_minecraft_hash(&player)?;
     let file_name = format!("{}.png", player_hash);
     let file_path = user_dir.join(&file_name);
     let public_url = format!(
@@ -135,7 +138,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageRespons
     );
 
     if file_path.exists() {
-        return ImageResponse { url: public_url };
+        return Ok(ImageResponse { url: public_url });
     }
 
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
@@ -412,17 +415,17 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> ImageRespons
         rx += w + 12;
     }
 
-    // --- Clean up old images for this player ---
-    cleanup_user_directory(&user_dir);
-
-    let _ = img.save(&file_path);
-    ImageResponse { url: public_url }
+    persist_image(&img, &file_path)?;
+    Ok(ImageResponse { url: public_url })
 }
 
 /// Service for generating a Discord profile image summary.
-pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
+pub async fn generate_discord_profile(user: DiscordUser) -> Result<ImageResponse, String> {
+    if !valid_discord_id(&user.discord_id) {
+        return Err("Invalid Discord ID in database".into());
+    }
     let user_dir = Path::new(paths::DISCORD_SUMMARY_DIR).join(&user.discord_id);
-    let _ = fs::create_dir_all(&user_dir);
+    fs::create_dir_all(&user_dir).map_err(|e| format!("Unable to create image directory: {}", e))?;
 
     let user_hash = calculate_user_hash(&user);
     let file_name = format!("{}.png", user_hash);
@@ -433,7 +436,7 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
     );
 
     if file_path.exists() {
-        return ImageResponse { url: public_url };
+        return Ok(ImageResponse { url: public_url });
     }
 
     let mut img = RgbaImage::new(CARD_WIDTH, CARD_HEIGHT);
@@ -764,23 +767,46 @@ pub async fn generate_discord_profile(user: DiscordUser) -> ImageResponse {
         }
     }
 
-    // --- Clean up old images for this user to keep only the latest one ---
-    cleanup_user_directory(&user_dir);
-
-    let _ = img.save(&file_path);
-    ImageResponse { url: public_url }
+    persist_image(&img, &file_path)?;
+    Ok(ImageResponse { url: public_url })
 }
 
-/// Removes all files in the specified directory.
-fn cleanup_user_directory(user_dir: &Path) {
-    if let Ok(entries) = fs::read_dir(user_dir) {
-        for entry in entries.flatten() {
-            let path = entry.path();
-            if path.is_file() {
-                let _ = fs::remove_file(path);
+pub fn valid_discord_id(id: &str) -> bool {
+    !id.is_empty() && id.len() <= 20 && id.bytes().all(|c| c.is_ascii_digit())
+}
+
+pub fn valid_uuid(uuid: &str) -> bool {
+    let clean = uuid.replace('-', "");
+    clean.len() == 32 && clean.bytes().all(|c| c.is_ascii_hexdigit())
+        && (uuid.len() == 32 || (uuid.len() == 36
+            && [8, 13, 18, 23].iter().all(|&index| uuid.as_bytes()[index] == b'-')))
+}
+
+/// Publish only complete PNGs. Keep earlier versions available for existing links.
+fn persist_image(img: &RgbaImage, file_path: &Path) -> Result<(), String> {
+    let nonce = oauth2::CsrfToken::new_random();
+    let temporary = file_path.with_extension(format!("{}.tmp", nonce.secret()));
+    let result = (|| {
+        let mut file = fs::OpenOptions::new().write(true).create_new(true).open(&temporary)
+            .map_err(|e| format!("Unable to create temporary image: {}", e))?;
+        img.write_to(&mut file, image::ImageFormat::Png)
+            .map_err(|e| format!("Unable to encode PNG: {}", e))?;
+        file.sync_all().map_err(|e| format!("Unable to flush PNG: {}", e))?;
+        drop(file);
+        if let Err(error) = fs::rename(&temporary, file_path) {
+            // Concurrent requests may have published the same complete cache entry on Windows.
+            if !file_path.is_file() {
+                return Err(format!("Unable to publish PNG: {}", error));
             }
         }
+        Ok(())
+    })();
+    if temporary.exists() {
+        if let Err(error) = fs::remove_file(&temporary) {
+            tracing::warn!("Unable to remove temporary image: {}", error);
+        }
     }
+    result
 }
 
 fn draw_stat_card(img: &mut RgbaImage, rect: Rect, label: &str, val: &str, font: &Font) {
@@ -998,26 +1024,74 @@ mod tests {
         assert_eq!(calculate_user_hash(&user1), calculate_user_hash(&user2));
     }
 
+    fn minecraft_fixture() -> MinecraftPlayer {
+        serde_json::from_value(serde_json::json!({
+            "id": "player-record", "discord_user": "123", "platform": "java",
+            "account_id": "123456781234123412341234567890ab", "playername": "Test",
+            "first_connected_at": "2025-01-01", "last_connected_at": "2026-01-01"
+        })).unwrap()
+    }
+
     #[test]
-    fn test_cleanup_user_directory() {
-        let test_dir = Path::new("test_cleanup_dir");
-        let _ = fs::create_dir_all(test_dir);
+    fn minecraft_cache_includes_badges_server_metadata_and_dates() {
+        let baseline = minecraft_fixture();
+        let baseline_hash = calculate_minecraft_hash(&baseline).unwrap();
+        let mut changed = baseline.clone();
+        changed.server_names.insert("server".into(), "New name".into());
+        assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
+        let mut changed = baseline.clone();
+        changed.server_colors.insert("server".into(), "#ff0000".into());
+        assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
+        let mut changed = baseline.clone();
+        changed.first_connected_at = "2024-01-01".into();
+        assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
+        let mut changed = baseline.clone();
+        changed.badges = Some(vec![serde_json::from_value(serde_json::json!({
+            "id": "earned", "player": "player-record", "badge": "badge",
+            "badge_info": {"id": "badge", "name": "Badge", "image": "badge.png"}
+        })).unwrap()]);
+        let badge_hash = calculate_minecraft_hash(&changed).unwrap();
+        assert_ne!(baseline_hash, badge_hash);
+        changed.badges.as_mut().unwrap()[0].badge_info.image = "updated.png".into();
+        assert_ne!(badge_hash, calculate_minecraft_hash(&changed).unwrap());
+    }
 
-        // Create dummy files
-        let file1 = test_dir.join("file1.png");
-        let file2 = test_dir.join("file2.png");
-        fs::write(&file1, "dummy").unwrap();
-        fs::write(&file2, "dummy").unwrap();
+    #[test]
+    fn minecraft_cache_is_independent_of_map_insertion_order() {
+        let mut first = minecraft_fixture();
+        first.server_names.insert("a".into(), "A".into());
+        first.server_names.insert("b".into(), "B".into());
+        let mut second = minecraft_fixture();
+        second.server_names.insert("b".into(), "B".into());
+        second.server_names.insert("a".into(), "A".into());
+        assert_eq!(calculate_minecraft_hash(&first).unwrap(), calculate_minecraft_hash(&second).unwrap());
+    }
 
-        assert!(file1.exists());
-        assert!(file2.exists());
+    #[test]
+    fn image_publish_is_complete_and_write_failures_preserve_previous_files() {
+        let nonce = oauth2::CsrfToken::new_random();
+        let directory = std::env::temp_dir().join(format!("oapi-image-test-{}", nonce.secret()));
+        fs::create_dir(&directory).unwrap();
+        let target = directory.join("image.png");
+        let img = RgbaImage::new(2, 2);
+        persist_image(&img, &target).unwrap();
+        assert!(image::open(&target).is_ok());
+        let previous = fs::read(&target).unwrap();
+        assert!(persist_image(&img, &directory.join("missing/image.png")).is_err());
+        assert_eq!(fs::read(&target).unwrap(), previous);
+        assert_eq!(fs::read_dir(&directory).unwrap().count(), 1);
+        fs::remove_file(target).unwrap();
+        fs::remove_dir(directory).unwrap();
+    }
 
-        cleanup_user_directory(test_dir);
-
-        assert!(!file1.exists());
-        assert!(!file2.exists());
-
-        // Cleanup the test directory
-        let _ = fs::remove_dir(test_dir);
+    #[test]
+    fn identifiers_reject_traversal_and_malformed_uuids() {
+        assert!(valid_uuid("12345678-1234-1234-1234-1234567890ab"));
+        assert!(valid_uuid("123456781234123412341234567890ab"));
+        for invalid in ["../secret", "123456781234123412341234567890ab----", ""] {
+            assert!(!valid_uuid(invalid));
+            assert!(!valid_discord_id(invalid));
+        }
+        assert!(valid_discord_id("123456789012345678"));
     }
 }

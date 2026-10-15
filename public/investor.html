@@ -57,6 +57,8 @@
             text-align: center;
         }
 
+        [hidden] { display: none !important; }
+
         .stats-grid {
             display: grid;
             grid-template-columns: 1fr 1fr;
@@ -110,60 +112,77 @@
     <div class="dashboard-container">
         <div class="header">
             <h1>Espace Investisseur</h1>
-            <p>Statistiques et performances en temps réel</p>
+            <p>Données communautaires enregistrées dans PocketBase</p>
         </div>
 
-        <div class="card" id="stats-card">
-            <p class="loading">Chargement des statistiques sécurisées...</p>
+        <div class="card" id="stats-card" aria-busy="true">
+            <h2>Aperçu global</h2>
+            <p id="stats-status" role="status">Chargement des statistiques...</p>
+            <div class="stats-grid" id="stats-grid" hidden>
+                <div class="stat-box"><div class="stat-value" id="discord-users"></div><div class="stat-label">Comptes Discord enregistrés</div></div>
+                <div class="stat-box"><div class="stat-value" id="minecraft-players"></div><div class="stat-label">Joueurs Minecraft enregistrés</div></div>
+                <div class="stat-box"><div class="stat-value" id="minecraft-servers"></div><div class="stat-label">Serveurs Minecraft enregistrés</div></div>
+                <div class="stat-box"><div class="stat-value" id="badges-awarded"></div><div class="stat-label">Badges attribués</div></div>
+            </div>
+            <p>Ces compteurs décrivent les enregistrements de la base, sans mesurer les utilisateurs actifs ni la disponibilité des serveurs.</p>
+            <button type="button" class="btn" id="refresh-stats">Actualiser</button>
+            <a href="/api/auth/login?return_to=/investor.html" class="btn" id="login-link" hidden>Se connecter avec Discord</a>
+            <a href="/admin.html" class="btn">Retour au profil</a>
         </div>
     </div>
 
     <script>
-        document.addEventListener('DOMContentLoaded', () => {
-            fetch('/api/investor/stats')
-                .then(response => {
-                    if (response.status === 403 || response.status === 401) {
-                        throw new Error("Accès refusé");
-                    }
-                    return response.json();
-                })
-                .then(stats => {
-                    const card = document.getElementById('stats-card');
-                    
-                    card.innerHTML = `
-                        <h2 style="margin-top:0; text-align:left; border-bottom: 1px solid rgba(255,255,255,0.1); padding-bottom:15px;">Aperçu Global</h2>
-                        <div class="stats-grid">
-                            <div class="stat-box">
-                                <div class="stat-value">${stats.images_generated_today || 0}</div>
-                                <div class="stat-label">Images (24h)</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value">${stats.total_active_users || 0}</div>
-                                <div class="stat-label">Utilisateurs actifs</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value">${stats.server_uptime_days || 0}</div>
-                                <div class="stat-label">Jours Uptime</div>
-                            </div>
-                            <div class="stat-box">
-                                <div class="stat-value">${stats.performance_score || 0}%</div>
-                                <div class="stat-label">Score de Perf</div>
-                            </div>
-                        </div>
-                        <div style="margin-top: 30px;">
-                            <a href="/admin.html" class="btn">Retour au profil</a>
-                        </div>
-                    `;
-                })
-                .catch(err => {
-                    document.getElementById('stats-card').innerHTML = `
-                        <div style="color: var(--danger); font-size: 3rem; margin-bottom: 10px;">🛑</div>
-                        <h2>Accès Refusé</h2>
-                        <p>Vous n'avez pas l'accréditation LoutreInvesti requise pour voir ces données.</p>
-                        <a href="/admin.html" class="btn">Retour au profil</a>
-                    `;
-                });
-        });
+        const fields = {
+            discord_users: 'discord-users',
+            minecraft_players: 'minecraft-players',
+            minecraft_servers: 'minecraft-servers',
+            badges_awarded: 'badges-awarded'
+        };
+        const card = document.getElementById('stats-card');
+        const grid = document.getElementById('stats-grid');
+        const status = document.getElementById('stats-status');
+        const refresh = document.getElementById('refresh-stats');
+        const login = document.getElementById('login-link');
+        const numbers = new Intl.NumberFormat('fr-FR');
+
+        async function loadStats() {
+            card.setAttribute('aria-busy', 'true');
+            refresh.disabled = true;
+            grid.hidden = true;
+            login.hidden = true;
+            status.textContent = 'Chargement des statistiques...';
+            try {
+                const response = await fetch('/api/investor/stats', { cache: 'no-store' });
+                if (response.status === 401) {
+                    login.hidden = false;
+                    status.textContent = 'Connectez-vous pour accéder aux statistiques.';
+                    return;
+                }
+                if (response.status === 403) {
+                    status.textContent = 'Cet espace est réservé aux membres LoutreInvesti et aux administrateurs.';
+                    return;
+                }
+                if (!response.ok) throw new Error('Statistiques indisponibles');
+                const stats = await response.json();
+                const fetchedAt = new Date(stats.fetched_at);
+                if (!Number.isFinite(fetchedAt.getTime()) || Object.keys(fields).some(key =>
+                    !Number.isSafeInteger(stats[key]) || stats[key] < 0)) {
+                    throw new Error('Réponse invalide');
+                }
+                for (const [key, id] of Object.entries(fields)) {
+                    document.getElementById(id).textContent = numbers.format(stats[key]);
+                }
+                status.textContent = `Données consultées le ${fetchedAt.toLocaleString('fr-FR')}`;
+                grid.hidden = false;
+            } catch {
+                status.textContent = 'Statistiques temporairement indisponibles. Vous pouvez réessayer.';
+            } finally {
+                card.setAttribute('aria-busy', 'false');
+                refresh.disabled = false;
+            }
+        }
+        refresh.addEventListener('click', loadStats);
+        loadStats();
     </script>
 </body>
 </html>

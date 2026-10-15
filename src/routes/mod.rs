@@ -12,6 +12,28 @@ use axum::{
     Router,
     routing::{get, post},
 };
+use tower_http::services::ServeFile;
+
+pub fn static_routes() -> Router {
+    // Explicit files prevent legacy public/generated_images from bypassing authorization.
+    Router::new()
+        .route_service("/", ServeFile::new("public/index.html"))
+        .route_service("/index.html", ServeFile::new("public/index.html"))
+        .route_service("/monitoring.html", ServeFile::new("public/monitoring.html"))
+        .route_service("/admin.html", ServeFile::new("public/admin.html"))
+        .route_service("/investor.html", ServeFile::new("public/investor.html"))
+        .route_service("/font/ARIAL.TTF", ServeFile::new("public/font/ARIAL.TTF"))
+}
+
+pub fn image_routes() -> Router {
+    Router::new()
+        .route(
+            "/generated_images/:kind/:owner/:filename",
+            get(crate::handlers::image_handler::get_image),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .layer(axum::middleware::from_fn(middleware::private_response))
+}
 
 /// Aggregates all internal API routes into a single Router.
 ///
@@ -55,6 +77,7 @@ pub fn api_routes() -> Router {
             &format!("{}/check/:type/:name", routes.monitoring),
             get(monitoring_handler::check_single_service),
         )
+        .layer(axum::middleware::from_fn(middleware::private_response))
 }
 
 #[cfg(test)]
@@ -66,6 +89,53 @@ mod tests {
         http::{Request, StatusCode},
     };
     use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn images_require_login_and_static_files_cannot_bypass_it() {
+        config::init();
+        let filename = format!("{}.png", "a".repeat(64));
+        let app = static_routes().merge(image_routes());
+        for path in [
+            format!("/generated_images/discord_summary/123/{}", filename),
+            format!(
+                "/generated_images/minecraft_summary/123456781234123412341234567890ab/{}",
+                filename
+            ),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(Request::builder().uri(path).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+        }
+        let response = app
+            .oneshot(
+                Request::builder()
+                    .uri(format!("/GENERATED_IMAGES/discord_summary/123/{}", filename))
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::NOT_FOUND);
+    }
+
+    #[tokio::test]
+    async fn oauth_callback_rejects_missing_and_unbound_state() {
+        config::init();
+        for uri in [
+            "/auth/callback?code=test",
+            "/auth/callback?code=test&state=forged",
+        ] {
+            let response = api_routes()
+                .oneshot(Request::builder().uri(uri).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+    }
 
     #[tokio::test]
     async fn test_auth_login_redirect() {
@@ -84,7 +154,12 @@ mod tests {
             .await
             .unwrap();
 
-        assert_eq!(response.status(), StatusCode::SEE_OTHER);
+        let expected = if config::Config::global().validate_security().is_ok() {
+            StatusCode::SEE_OTHER
+        } else {
+            StatusCode::SERVICE_UNAVAILABLE
+        };
+        assert_eq!(response.status(), expected);
     }
 
     #[tokio::test]

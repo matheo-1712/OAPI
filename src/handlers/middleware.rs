@@ -4,6 +4,19 @@ use axum::{extract::Request, http::StatusCode, middleware::Next, response::Respo
 use axum_extra::extract::cookie::CookieJar;
 use tracing::error;
 
+pub async fn private_response(request: Request, next: Next) -> Response {
+    let mut response = next.run(request).await;
+    response.headers_mut().insert(
+        axum::http::header::CACHE_CONTROL,
+        axum::http::HeaderValue::from_static("no-store"),
+    );
+    response.headers_mut().insert(
+        axum::http::header::X_CONTENT_TYPE_OPTIONS,
+        axum::http::HeaderValue::from_static("nosniff"),
+    );
+    response
+}
+
 /// Base logic to verify token and optionally check minimum role
 async fn verify_and_check_role(
     jar: CookieJar,
@@ -11,6 +24,16 @@ async fn verify_and_check_role(
     next: Next,
     required_roles: &[Role],
 ) -> Result<Response, (StatusCode, String)> {
+    if !request.method().is_safe() {
+        if let Some(origin) = request.headers().get(axum::http::header::ORIGIN) {
+            let expected = reqwest::Url::parse(&crate::config::Config::global().auth.discord_redirect_url)
+                .map(|url| url.origin().ascii_serialization())
+                .unwrap_or_default();
+            if origin.to_str().ok() != Some(expected.as_str()) {
+                return Err((StatusCode::FORBIDDEN, "Cross-origin request rejected.".into()));
+            }
+        }
+    }
     if let Some(claims) = jar
         .get("auth_token")
         .and_then(|c| AuthAction::verify_token(c.value()))

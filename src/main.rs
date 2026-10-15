@@ -13,7 +13,7 @@ mod utils;
 
 use axum::Router;
 use std::net::SocketAddr;
-use tower_http::{services::ServeDir, trace::TraceLayer};
+use tower_http::trace::TraceLayer;
 use utoipa::OpenApi;
 use utoipa_swagger_ui::SwaggerUi;
 
@@ -32,6 +32,7 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::monitoring_handler::check_single_service
     ),
     components(schemas(
+        models::investor::InvestorStats,
         models::ImageRequest,
         models::ImageResponse,
         models::DiscordUser,
@@ -80,6 +81,9 @@ async fn main() {
 
     // Initialize config
     config::init();
+    config::Config::global()
+        .validate_security()
+        .expect("Invalid authentication configuration");
 
     let banner = r#"
   ____               ____    ___ 
@@ -102,7 +106,8 @@ async fn main() {
     let app = Router::new()
         .nest(&config.server.routes.base, routes::api_routes())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
-        .fallback_service(ServeDir::new("public"))
+        .merge(routes::static_routes())
+        .merge(routes::image_routes())
         .layer(TraceLayer::new_for_http());
 
     let addr_str = format!("{}:{}", config.server.host, config.server.port);

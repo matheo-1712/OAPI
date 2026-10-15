@@ -17,6 +17,41 @@ pub struct AuthAction {
     reqwest_client: Client,
 }
 
+#[derive(serde::Serialize, serde::Deserialize)]
+struct OAuthState {
+    nonce: String,
+    return_to: String,
+    exp: usize,
+}
+
+fn decode_oauth_state(state: &str, secret: &str) -> Option<String> {
+    if secret.trim().len() < 32 {
+        return None;
+    }
+    let mut validation = Validation::default();
+    validation.leeway = 0;
+    decode::<OAuthState>(
+        state,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &validation,
+    )
+    .ok()
+    .map(|data| data.claims.return_to)
+}
+
+fn verify_with_secret(token: &str, secret: &str) -> Option<JwtClaims> {
+    if secret.trim().len() < 32 {
+        return None;
+    }
+    decode::<JwtClaims>(
+        token,
+        &DecodingKey::from_secret(secret.as_bytes()),
+        &Validation::default(),
+    )
+    .ok()
+    .map(|data| data.claims)
+}
+
 impl AuthAction {
     pub fn new() -> Self {
         let config = Config::global();
@@ -37,20 +72,40 @@ impl AuthAction {
         }
     }
 
-    pub fn get_login_url(&self) -> String {
-        let (auth_url, _csrf_token) = self
+    pub fn get_login_url(&self, return_to: String) -> Result<(String, String), String> {
+        let config = Config::global();
+        config.validate_security()?;
+        let state = OAuthState {
+            nonce: CsrfToken::new_random().secret().clone(),
+            return_to,
+            exp: (chrono::Utc::now().timestamp() + 600) as usize,
+        };
+        let state = encode(
+            &Header::default(),
+            &state,
+            &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
+        )
+        .map_err(|_| "Unable to create OAuth state".to_string())?;
+        let (auth_url, _) = self
             .oauth_client
-            .authorize_url(CsrfToken::new_random)
+            .authorize_url(|| CsrfToken::new(state.clone()))
             .add_scope(Scope::new("identify".to_string()))
             .add_scope(Scope::new("guilds".to_string()))
             .add_scope(Scope::new("guilds.members.read".to_string()))
             .url();
 
-        auth_url.to_string()
+        Ok((auth_url.to_string(), state))
+    }
+
+    pub fn verify_oauth_state(state: &str) -> Option<String> {
+        let config = Config::global();
+        config.validate_security().ok()?;
+        decode_oauth_state(state, &config.auth.jwt_secret)
     }
 
     pub async fn handle_callback(&self, code: String) -> Result<String, String> {
         let config = Config::global();
+        config.validate_security()?;
 
         let token_result = self
             .oauth_client
@@ -175,30 +230,47 @@ impl AuthAction {
 
     pub fn verify_token(token: &str) -> Option<JwtClaims> {
         let config = Config::global();
-        let mut validation = Validation::default();
-        validation.validate_exp = true;
-        match decode::<JwtClaims>(
-            token,
-            &DecodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
-            &validation,
-        ) {
-            Ok(token_data) => Some(token_data.claims),
-            Err(_) => None,
-        }
+        verify_with_secret(token, &config.auth.jwt_secret)
     }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::config;
+    const TEST_SECRET: &str = "test-only-secret-at-least-32-bytes-long";
+
+    #[test]
+    fn oauth_state_rejects_expiry_tampering_and_wrong_key() {
+        let state = OAuthState {
+            nonce: "random-nonce".into(),
+            return_to: "/investor.html".into(),
+            exp: (chrono::Utc::now().timestamp() + 600) as usize,
+        };
+        let token = encode(
+            &Header::default(),
+            &state,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+        assert_eq!(
+            decode_oauth_state(&token, TEST_SECRET).as_deref(),
+            Some("/investor.html")
+        );
+        assert!(decode_oauth_state(&format!("{}tampered", token), TEST_SECRET).is_none());
+        assert!(decode_oauth_state(&token, "another-test-secret-at-least-32-bytes").is_none());
+        assert!(decode_oauth_state(&token, "").is_none());
+        let expired = OAuthState { exp: 1, ..state };
+        let token = encode(
+            &Header::default(),
+            &expired,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+        assert!(decode_oauth_state(&token, TEST_SECRET).is_none());
+    }
 
     #[test]
     fn test_verify_token_valid() {
-        let _ = dotenvy::dotenv();
-        config::init();
-        let config = Config::global();
-
         let claims = JwtClaims {
             sub: "123".to_string(),
             username: "test_user".to_string(),
@@ -217,21 +289,20 @@ mod tests {
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
         )
         .unwrap();
 
-        let verified = AuthAction::verify_token(&token);
+        let verified = verify_with_secret(&token, TEST_SECRET);
         assert!(verified.is_some());
         assert_eq!(verified.unwrap().username, "test_user");
+        assert!(verify_with_secret(&token, "").is_none());
+        assert!(verify_with_secret(&token, "short").is_none());
+        assert!(verify_with_secret(&token, "another-test-secret-at-least-32-bytes").is_none());
     }
 
     #[test]
     fn test_verify_token_expired() {
-        let _ = dotenvy::dotenv();
-        config::init();
-        let config = Config::global();
-
         let claims = JwtClaims {
             sub: "123".to_string(),
             username: "test_user".to_string(),
@@ -251,11 +322,11 @@ mod tests {
         let token = encode(
             &Header::default(),
             &claims,
-            &EncodingKey::from_secret(config.auth.jwt_secret.as_bytes()),
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
         )
         .unwrap();
 
-        let verified = AuthAction::verify_token(&token);
+        let verified = verify_with_secret(&token, TEST_SECRET);
         assert!(verified.is_none());
     }
 }

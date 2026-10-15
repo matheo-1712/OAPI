@@ -22,6 +22,7 @@ craftping = { version = "0.7.0", features = ["async-tokio"] }
 oauth2 = { version = "4.4.2", features = ["reqwest"] }
 jsonwebtoken = "9.3.0"
 axum-extra = { version = "0.9.3", features = ["cookie"] }
+time = "0.3"
 urlencoding = "2.1.3"
 config = "0.15.25"
 image = "0.25.10"

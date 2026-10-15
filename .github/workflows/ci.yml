@@ -44,6 +44,8 @@ jobs:
         uses: Swatinem/rust-cache@42dc69e1aa15d09112580998cf2ef0119e2e91ae # v2
       - name: Run tests
         run: cargo test --all-features --verbose
+      - name: Test investor page
+        run: node --test tests/investor_page.test.cjs
 
   build:
     name: Build

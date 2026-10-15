@@ -1,4 +1,5 @@
 pub mod auth;
+pub mod investor;
 mod common;
 mod discord;
 mod minecraft;

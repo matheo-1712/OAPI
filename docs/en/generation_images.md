@@ -8,7 +8,7 @@ The image generation service (`src/services/image_service.rs`) dynamically creat
 
 The service uses an intelligent cache to minimize CPU and bandwidth usage.
 
-1.  **Organization**: Images are stored in `public/generated_images/` in specific subfolders (`discord_summary/` or `minecraft_summary/`) grouped by unique identifier (`discord_id` or `account_id`).
+1.  **Organization**: Images are stored in `generated_images/` in specific subfolders (`discord_summary/` or `minecraft_summary/`) grouped by unique identifier (`discord_id` or `account_id`).
 2.  **Content Hash**: A SHA-256 hash is generated from **all profile data** (username, statistics, badges, servers).
 3.  **Verification**: If the `{hash}.png` file exists, it is served immediately.
 4.  **Self-Cleaning**: When a new image is generated (due to data changes), the user's folder is cleared to keep only the most recent version.
@@ -38,6 +38,8 @@ The service uses an intelligent cache to minimize CPU and bandwidth usage.
 
 ---
 
-## Public URLs
+## Protected URLs
 The paths returned by the API are ready to be used in an `<img>` tag:
 `/generated_images/minecraft_summary/{uuid}/{hash}.png`
+
+Images require the owner or administrator session. Cache-Control: no-store.

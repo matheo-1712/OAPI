@@ -124,10 +124,25 @@ pub struct InternalRoutes {
     pub monitoring: String,
 }
 
-/// Static storage for the global configuration to ensure it's loaded only once.
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
 impl Config {
+    pub fn validate_security(&self) -> Result<(), String> {
+        if self.auth.jwt_secret.trim().len() < 32 {
+            return Err("JWT_SECRET must contain at least 32 non-blank bytes".into());
+        }
+        if self.server.env == "production"
+            && !self.auth.discord_redirect_url.starts_with("https://")
+        {
+            return Err("Production requires an HTTPS DISCORD_REDIRECT_URL".into());
+        }
+        Ok(())
+    }
+
+    pub fn secure_cookies(&self) -> bool {
+        self.server.env == "production" || self.auth.discord_redirect_url.starts_with("https://")
+    }
+
     /// Loads the configuration from the hierarchical sources and environment.
     pub fn load() -> Result<Self, ConfigError> {
         Self::load_from("default_config.yaml", Some("config.yaml"))
@@ -154,7 +169,15 @@ impl Config {
             discord_auth: DiscordAuthConfig,
         }
 
-        let parts: YamlParts = yaml_config.try_deserialize()?;
+        let mut parts: YamlParts = yaml_config.try_deserialize()?;
+        if let Ok(environment) = std::env::var("OAPI_ENV") {
+            if !matches!(environment.as_str(), "development" | "production") {
+                return Err(ConfigError::Message(
+                    "OAPI_ENV must be development or production".into(),
+                ));
+            }
+            parts.server.env = environment;
+        }
 
         // 2. Load Auth configuration from Environment ONLY
         let pb_email = std::env::var("PB_EMAIL")
@@ -240,6 +263,22 @@ pub fn init() {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn security_configuration_fails_closed() {
+        let mut config = Config::load().unwrap();
+        for secret in ["", "short", "                                "] {
+            config.auth.jwt_secret = secret.into();
+            assert!(config.validate_security().is_err());
+        }
+        config.auth.jwt_secret = "test-only-secret-at-least-32-bytes-long".into();
+        config.server.env = "production".into();
+        config.auth.discord_redirect_url = "http://localhost/callback".into();
+        assert!(config.validate_security().is_err());
+        config.auth.discord_redirect_url = "https://example.com/api/auth/callback".into();
+        assert!(config.validate_security().is_ok());
+        assert!(config.secure_cookies());
+    }
 
     #[test]
     fn test_config_load_default() {

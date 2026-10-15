@@ -6,7 +6,7 @@ This document describes the OAuth2 and JWT-based authentication system implement
 OAPI uses Discord OAuth2 to authenticate users. Instead of storing sessions on the server (which uses memory and database I/O), we issue a stateless JSON Web Token (JWT) that is stored in an `auth_token` cookie.
 
 ## 1. OAuth2 Flow
-1. **Login Route (`/api/auth/login`)**: When a user clicks "Se connecter", this route saves their current URL in a `return_to` cookie, then redirects them to the Discord authorization page.
+1. **Login Route (`/api/auth/login`)**: When a user clicks "Se connecter", this route signs their return URL in a short-lived OAuth state and sets an `oauth_state` cookie, then redirects them to the Discord authorization page.
 2. **Callback Route (`/api/auth/callback`)**: After Discord authorizes the user, it redirects here with a temporary `code`. The server exchanges this `code` for an access token, fetches the user's Discord profile and roles, verifies their existence in PocketBase, generates a JWT, sets the `auth_token` cookie, and redirects the user back to the `return_to` URL.
 3. **Logout Route (`/api/auth/logout`)**: Clears the `auth_token` cookie and redirects the user safely to the home page or `return_to` URL.
 
@@ -17,7 +17,7 @@ The generated JWT contains the following claims:
 - `role`: The highest role assigned to the user (`Admin`, `LoutreInvesti`, or `Normal`).
 - `exp`: Expiration timestamp (7 days)
 
-The cookie is stored with `HttpOnly = false` to allow frontend JavaScript to easily check the authentication state via `document.cookie`, while the backend routes strictly verify the cryptographic signature of the JWT on every request.
+The session cookie is HttpOnly and SameSite=Lax, with Secure enabled for HTTPS or production and a seven-day lifetime. The frontend checks /api/auth/me instead of reading the token. JWT_SECRET must contain at least 32 bytes after trimming; startup rejects missing or short secrets.
 
 ## 3. Middlewares
 We implemented three cascading security middlewares in `src/handlers/middleware.rs`:
@@ -34,3 +34,9 @@ Router::new()
 
 ## 4. Emergency Kill-Switch
 If cookies or secrets are compromised, you can instantly log out all active users by changing the `JWT_SECRET` environment variable in the `.env` file and restarting the server. Because the JWTs are stateless, changing the signature key invalidates all previously issued tokens immediately.
+
+## OAuth state and private images
+
+OAuth state is signed, random, expires after ten minutes, and must match the browser cookie before code exchange. The signed local return path is validated again at callback. Images are stored outside public and require owner or administrator authorization; Minecraft ownership uses the PocketBase discord_user relation. API and image responses use Cache-Control: no-store. Legacy public image files are no longer served and profiles regenerate on demand.
+
+Set OAPI_ENV=production and an HTTPS Discord callback URL in production. TLS must be terminated by the server or reverse proxy.

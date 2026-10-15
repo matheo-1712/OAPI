@@ -14,8 +14,7 @@ use tracing::{debug, error, warn};
 /// Orchestrates the process of fetching Discord data and generating a summary image.
 pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, String> {
     let user = fetch_discord_data(id).await?;
-    let response = services::generate_discord_profile(user).await;
-    Ok(response)
+    services::generate_discord_profile(user).await
 }
 
 /// Private helper to aggregate Discord user info and stats from PocketBase.

@@ -37,6 +37,9 @@ monitoring:
     - name: "Ottergames"
       host: "antredesloutres.fr"
       port: 25599
+    - name: "ProminenceII"
+      host: "antredesloutres.fr"
+      port: 25571
 
   api:
     - name: "OtterlyApi"

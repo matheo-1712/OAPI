@@ -1,12 +1,15 @@
 use crate::actions::AuthAction;
+use crate::config::Config;
 use axum::{
     Json,
     extract::Query,
+    http::StatusCode,
     response::{IntoResponse, Redirect},
 };
-use axum_extra::extract::cookie::{Cookie, CookieJar};
+use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::Deserialize;
 use serde_json::json;
+use time::Duration;
 
 #[derive(Deserialize)]
 pub struct AuthLoginQuery {
@@ -17,6 +20,7 @@ pub struct AuthLoginQuery {
 pub struct AuthCallbackQuery {
     pub code: Option<String>,
     pub error: Option<String>,
+    pub state: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -26,10 +30,26 @@ pub struct AuthLogoutQuery {
 
 /// Ensures the return_to URL is a safe, relative path to prevent Open Redirect vulnerabilities.
 fn safe_return_to(url: Option<String>) -> String {
-    if let Some(url) = url.filter(|u| u.starts_with('/') && !u.starts_with("//")) {
+    if let Some(url) = url.filter(|u| {
+        u.len() <= 1024
+            && u.starts_with('/')
+            && !u.starts_with("//")
+            && !u.contains('\\')
+            && !u.chars().any(char::is_control)
+    }) {
         return url;
     }
     "/".to_string()
+}
+
+fn auth_cookie(name: &'static str, value: String, seconds: i64) -> Cookie<'static> {
+    Cookie::build((name, value))
+        .path("/")
+        .http_only(true)
+        .secure(Config::global().secure_cookies())
+        .same_site(SameSite::Lax)
+        .max_age(Duration::seconds(seconds))
+        .build()
 }
 
 #[utoipa::path(
@@ -40,7 +60,8 @@ fn safe_return_to(url: Option<String>) -> String {
         ("return_to" = Option<String>, Query, description = "Optional URL to redirect to after successful login")
     ),
     responses(
-        (status = 303, description = "Redirects to Discord OAuth2 login page")
+        (status = 303, description = "Redirects to Discord OAuth2 login page"),
+        (status = 503, description = "Authentication configuration unavailable")
     )
 )]
 pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> impl IntoResponse {
@@ -52,19 +73,25 @@ pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> impl 
         .and_then(|cookie| AuthAction::verify_token(cookie.value()))
         .is_some()
     {
-        return (jar, Redirect::to(&return_to));
+        return (jar, Redirect::to(&return_to)).into_response();
     }
 
     let auth_action = AuthAction::new();
-    let url = auth_action.get_login_url();
-
-    // Save return_to in a temporary cookie
-    let return_cookie = Cookie::build(("return_to", return_to.clone()))
-        .path("/")
-        .http_only(true)
-        .build();
-
-    (jar.add(return_cookie), Redirect::to(&url))
+    match auth_action.get_login_url(return_to) {
+        Ok((url, state)) => (
+            jar.add(auth_cookie("oauth_state", state, 600)),
+            Redirect::to(&url),
+        )
+            .into_response(),
+        Err(error) => {
+            tracing::error!("Unable to start OAuth login: {}", error);
+            (
+                StatusCode::SERVICE_UNAVAILABLE,
+                "Connexion temporairement indisponible.",
+            )
+                .into_response()
+        }
+    }
 }
 
 #[utoipa::path(
@@ -72,40 +99,54 @@ pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> impl 
     path = "/auth/callback",
     tag = "auth",
     params(
-        ("code" = String, Query, description = "OAuth2 authorization code")
+        ("code" = Option<String>, Query, description = "OAuth2 authorization code"),
+        ("state" = String, Query, description = "Signed OAuth state bound to the browser cookie")
     ),
     responses(
-        (status = 303, description = "Redirects to frontend with auth_token cookie on success or login_error parameter on failure")
+        (status = 303, description = "Redirects to frontend after authentication"),
+        (status = 400, description = "Missing, unbound, expired or invalid OAuth state or code")
     )
 )]
 pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) -> impl IntoResponse {
-    let auth_action = AuthAction::new();
-
-    let return_to = jar
-        .get("return_to")
-        .map(|c| c.value().to_string())
-        .unwrap_or_else(|| "/".to_string());
-
-    // Remove the return_to cookie
-    let jar = jar.remove(Cookie::build(("return_to", "")).path("/").build());
+    let return_to = query.state.as_deref().and_then(|state| {
+        jar.get("oauth_state")
+            .filter(|cookie| cookie.value() == state)
+            .and_then(|_| AuthAction::verify_oauth_state(state))
+    });
+    let jar = jar.remove(auth_cookie("oauth_state", String::new(), 0));
+    let Some(return_to) = return_to else {
+        return (
+            jar,
+            (StatusCode::BAD_REQUEST, "Tentative de connexion invalide ou expirée."),
+        )
+            .into_response();
+    };
+    let return_to = safe_return_to(Some(return_to));
 
     // Check if the user cancelled the authorization or an error occurred
     if let Some(error) = query.error {
         tracing::warn!("Discord OAuth error: {}", error);
-        return (jar, Redirect::to(&return_to));
+        return (jar, Redirect::to(&return_to)).into_response();
     }
 
     let code = match query.code {
         Some(c) => c,
-        None => return (jar, Redirect::to(&return_to)),
+        None => {
+            return (jar, (StatusCode::BAD_REQUEST, "Code de connexion manquant."))
+                .into_response();
+        }
     };
 
-    match auth_action.handle_callback(code).await {
+    let auth_action = AuthAction::new();
+    let result = tokio::time::timeout(
+        std::time::Duration::from_secs(30),
+        auth_action.handle_callback(code),
+    )
+    .await
+    .unwrap_or_else(|_| Err("Discord authentication timed out".into()));
+    match result {
         Ok(token) => {
-            let cookie = Cookie::build(("auth_token", token))
-                .path("/")
-                .http_only(false) // False allows frontend JS to check for connection
-                .build();
+            let cookie = auth_cookie("auth_token", token, 3600 * 24 * 7);
 
             // Redirect to return_to
             let redirect_url = if return_to == "/" {
@@ -113,17 +154,17 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
             } else {
                 return_to
             };
-            (jar.add(cookie), Redirect::to(&redirect_url))
+            (jar.add(cookie), Redirect::to(&redirect_url)).into_response()
         }
         Err(e) => {
             tracing::error!("Auth error: {}", e);
             // Redirect to home page with error
             let redirect_url = if return_to == "/" {
-                format!("/?login_error={}", urlencoding::encode(&e))
+                "/?login_error=authentication_failed".to_string()
             } else {
                 return_to
             };
-            (jar, Redirect::to(&redirect_url))
+            (jar, Redirect::to(&redirect_url)).into_response()
         }
     }
 }
@@ -167,7 +208,7 @@ pub async fn me(jar: CookieJar) -> impl IntoResponse {
     )
 )]
 pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> impl IntoResponse {
-    let cookie = Cookie::build(("auth_token", "")).path("/").build();
+    let cookie = auth_cookie("auth_token", String::new(), 0);
 
     let return_to = safe_return_to(query.return_to);
 
@@ -177,6 +218,18 @@ pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> imp
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn session_cookie_is_inaccessible_to_javascript_and_has_expiry() {
+        crate::config::init();
+        let cookie = auth_cookie("auth_token", "test".into(), 604800);
+        assert_eq!(cookie.http_only(), Some(true));
+        assert_eq!(cookie.same_site(), Some(SameSite::Lax));
+        assert_eq!(cookie.path(), Some("/"));
+        assert_eq!(cookie.max_age(), Some(Duration::seconds(604800)));
+        assert_eq!(cookie.secure(), Some(Config::global().secure_cookies()));
+        assert_eq!(cookie.domain(), None);
+    }
 
     #[test]
     fn test_safe_return_to_valid() {
@@ -196,6 +249,8 @@ mod tests {
         assert_eq!(safe_return_to(Some("https://google.com".to_string())), "/");
         assert_eq!(safe_return_to(Some("//malicious.com".to_string())), "/");
         assert_eq!(safe_return_to(Some("admin.html".to_string())), "/");
+        assert_eq!(safe_return_to(Some("/\\evil.example".to_string())), "/");
+        assert_eq!(safe_return_to(Some("/\nevil.example".to_string())), "/");
         assert_eq!(safe_return_to(None), "/");
     }
 }
