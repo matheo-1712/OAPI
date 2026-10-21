@@ -1,5 +1,6 @@
 services:
   oapi:
+    container_name: api-oapi
     build: .
     restart: unless-stopped
     init: true
