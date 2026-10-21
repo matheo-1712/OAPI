@@ -102,3 +102,30 @@ pub async fn require_admin(
 ) -> Result<Response, (StatusCode, String)> {
     verify_and_check_role(jar, request, next, &[Role::Admin]).await
 }
+
+#[cfg(test)]
+mod activity_tests {
+    use super::*;
+    use axum::{body::Body, http::Request as HttpRequest};
+    use tower::ServiceExt;
+    #[tokio::test]
+    async fn statistics_routes_reject_missing_and_forged_sessions() {
+        crate::config::init();
+        for path in ["/discord/stats/me", "/admin/discord/stats"] {
+            for cookie in ["", "auth_token=forged"] {
+                let response = crate::routes::api_routes()
+                    .oneshot(
+                        HttpRequest::builder()
+                            .uri(path)
+                            .header("cookie", cookie)
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                assert_eq!(response.headers()["cache-control"], "no-store");
+            }
+        }
+    }
+}

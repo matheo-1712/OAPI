@@ -422,7 +422,10 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
 }
 
 /// Service for generating a Discord profile image summary.
-pub async fn generate_discord_profile(user: DiscordUser) -> Result<ImageResponse, String> {
+pub async fn generate_discord_profile(
+    user: DiscordUser,
+    activity: &crate::models::discord_activity::DiscordActivity,
+) -> Result<ImageResponse, String> {
     if !valid_discord_id(&user.discord_id) {
         return Err("Invalid Discord ID in database".into());
     }
@@ -430,7 +433,20 @@ pub async fn generate_discord_profile(user: DiscordUser) -> Result<ImageResponse
     fs::create_dir_all(&user_dir)
         .map_err(|e| format!("Unable to create image directory: {}", e))?;
 
-    let user_hash = calculate_user_hash(&user);
+    let mut hash_activity = activity.clone();
+    hash_activity.fetched_at.clear();
+    let user_hash = format!(
+        "{:x}",
+        Sha256::digest(
+            [
+                calculate_user_hash(&user).as_bytes(),
+                serde_json::to_vec(&hash_activity)
+                    .map_err(|e| e.to_string())?
+                    .as_slice()
+            ]
+            .concat()
+        )
+    );
     let file_name = format!("{}.png", user_hash);
     let file_path = user_dir.join(&file_name);
     let public_url = format!(
@@ -627,51 +643,23 @@ pub async fn generate_discord_profile(user: DiscordUser) -> Result<ImageResponse
     );
 
     // --- DATA PROCESSING ---
-    let total_messages: i64 = user.stats.iter().map(|s| s.message_count).sum();
-    let total_vocal_decimal_raw: f64 = user
-        .stats
-        .iter()
-        .map(|s| s.vocal_time.parse::<f64>().unwrap_or_default())
-        .sum();
-    // vocal_time in the database is already in decimal hours.
-    let total_vocal_decimal = total_vocal_decimal_raw;
-
-    let mut text_counts = HashMap::new();
-    let mut voice_counts = HashMap::new();
-    let mut companion_counts = HashMap::new();
-    for stat in &user.stats {
-        if let Some(channels) = &stat.text_channels {
-            for ch in channels {
-                *text_counts.entry(ch.name.clone()).or_insert(0) += 1;
-            }
-        }
-        if let Some(channels) = &stat.voice_channels {
-            for ch in channels {
-                *voice_counts.entry(ch.name.clone()).or_insert(0) += 1;
-            }
-        }
-        if let Some(vocal_with) = &stat.vocal_with {
-            for comp in vocal_with {
-                *companion_counts.entry(comp.username.clone()).or_insert(0) += 1;
-            }
-        }
-    }
-    let top_text = text_counts
-        .into_iter()
-        .max_by_key(|&(_, c)| c)
-        .map(|(n, _)| n)
-        .unwrap_or_else(|| "Aucun".to_string());
-    let top_voice = voice_counts
-        .into_iter()
-        .max_by_key(|&(_, c)| c)
-        .map(|(n, _)| n)
-        .unwrap_or_else(|| "Aucun".to_string());
-    let top_companion = companion_counts
-        .into_iter()
-        .max_by_key(|&(_, c)| c)
-        .map(|(n, _)| n)
-        .unwrap_or_else(|| "Aucun".to_string());
-
+    let total_messages = activity.total_messages;
+    let total_vocal_decimal = activity.total_vocal_hours;
+    let top_text = activity
+        .favorite_text_channel
+        .as_ref()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "Aucun".into());
+    let top_voice = activity
+        .favorite_voice_channel
+        .as_ref()
+        .map(|c| c.name.clone())
+        .unwrap_or_else(|| "Aucun".into());
+    let top_companion = activity
+        .top_voice_companion
+        .as_ref()
+        .map(|companion| companion.username.clone())
+        .unwrap_or_else(|| "Aucun".into());
     let filtered_roles: Vec<_> = user
         .roles
         .iter()

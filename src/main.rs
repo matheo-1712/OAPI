@@ -32,13 +32,21 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::badge_handler::refresh_mine,
         handlers::badge_handler::refresh_discord,
         handlers::investor_handler::get_stats,
+        handlers::image_handler::get_image,
+        handlers::discord_activity::personal,
+        handlers::discord_activity::global,
         handlers::discord_handler::create_discord_summary_by_id,
+        handlers::discord_handler::create_my_discord_summary,
         handlers::minecraft_handler::create_minecraft_summary_by_id,
         handlers::monitoring_handler::get_monitoring_status,
         handlers::monitoring_handler::check_single_service
     ),
     components(schemas(
         models::investor::InvestorStats,
+        models::discord_activity::DiscordActivity,
+        models::discord_activity::ActivityDay,
+        models::discord_activity::ChannelTotal,
+        models::discord_activity::VoiceCompanion,
         services::badge_service::AwardRequest,
         services::badge_service::RefreshResponse,
         services::badge_service::NewBadge,
@@ -119,6 +127,12 @@ async fn main() {
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .merge(routes::static_routes())
         .merge(routes::image_routes())
+        .layer(axum::middleware::from_fn(
+            handlers::rate_limit::limit_requests,
+        ))
+        .layer(axum::middleware::from_fn(
+            handlers::middleware::private_response,
+        ))
         .layer(TraceLayer::new_for_http());
 
     let addr_str = format!("{}:{}", config.server.host, config.server.port);
@@ -130,57 +144,161 @@ async fn main() {
     tracing::info!("🌐 Web interface available at http://{}", addr);
 
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
-    axum::serve(listener, app).await.unwrap();
+    axum::serve(
+        listener,
+        app.into_make_service_with_connect_info::<SocketAddr>(),
+    )
+    .await
+    .unwrap();
 }
 
 /// Update OpenAPI paths to match dynamic configuration
 fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config::Config) {
+    use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme};
+    openapi
+        .components
+        .get_or_insert_with(Default::default)
+        .add_security_scheme(
+            "session_cookie",
+            SecurityScheme::ApiKey(ApiKey::Cookie(ApiKeyValue::new("auth_token"))),
+        );
     let mut new_paths = utoipa::openapi::path::PathsBuilder::new();
     let base = &config.server.routes.base;
 
     // For each path in the original spec, try to find a matching config and remap it
     for (path, item) in openapi.paths.paths.iter() {
-        let new_path = if path.contains("discord-summary") {
-            // Convert Axum :param to OpenAPI {param}
-            let dynamic_path = config.server.routes.discord_summary.replace(":", "{");
-
-            // If the parameter in YAML doesn't end with }, add it
-            let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {
-                format!("{}}}", dynamic_path)
-            } else {
-                dynamic_path
-            };
-
-            format!("{}{}", base, final_dynamic)
-        } else if path.contains("minecraft-summary") {
-            // Convert Axum :param to OpenAPI {param}
-            let dynamic_path = config.server.routes.minecraft_summary.replace(":", "{");
-
-            let final_dynamic = if dynamic_path.contains('{') && !dynamic_path.ends_with('}') {
-                format!("{}}}", dynamic_path)
-            } else {
-                dynamic_path
-            };
-
-            format!("{}{}", base, final_dynamic)
-        } else if path.starts_with("/monitoring/check") {
-            format!(
-                "{}{}/check/{{type}}/{{name}}",
-                base, config.server.routes.monitoring
-            )
-        } else if path == "/monitoring" {
-            format!("{}{}", base, config.server.routes.monitoring)
-        } else {
-            // Default: just prefix with base if it doesn't already have it and starts with /
-            if path.starts_with('/') && !path.starts_with(base) {
-                format!("{}{}", base, path)
-            } else {
-                path.clone()
+        let route = match path.as_str() {
+            "/discord-summary/{id}" => config.server.routes.discord_summary.clone(),
+            "/discord-summary/me" => config.server.routes.discord_summary.replace(":id", "me"),
+            "/minecraft-summary/{uuid}" => config.server.routes.minecraft_summary.clone(),
+            "/monitoring" => config.server.routes.monitoring.clone(),
+            "/monitoring/check/{type}/{name}" => {
+                format!("{}/check/:type/:name", config.server.routes.monitoring)
             }
+            _ => path.clone(),
         };
-
-        new_paths = new_paths.path(new_path, item.clone());
+        let route = route
+            .split('/')
+            .map(|segment| {
+                segment
+                    .strip_prefix(':')
+                    .map(|name| format!("{{{name}}}"))
+                    .unwrap_or_else(|| segment.to_string())
+            })
+            .collect::<Vec<_>>()
+            .join("/");
+        // Images are mounted at the application root, outside the API prefix.
+        let new_path = if path.starts_with("/generated_images/") {
+            route
+        } else {
+            format!("{}{}", base.trim_end_matches('/'), route)
+        };
+        let mut item = item.clone();
+        if path.starts_with("/admin/")
+            || path.starts_with("/badges/")
+            || path.starts_with("/investor/")
+            || path.starts_with("/discord/")
+            || path.starts_with("/generated_images/")
+            || path == "/auth/me"
+            || path == "/discord-summary/{id}"
+            || path == "/discord-summary/me"
+            || path == "/minecraft-summary/{uuid}"
+        {
+            for operation in item.operations.values_mut() {
+                operation.security = Some(vec![SecurityRequirement::new(
+                    "session_cookie",
+                    Vec::<String>::new(),
+                )]);
+            }
+        }
+        for operation in item.operations.values_mut() {
+            operation.responses.responses.entry("429".to_string()).or_insert_with(||
+                utoipa::openapi::Response::new("10 requests per minute per route and account or anonymous IP; Retry-After in seconds").into());
+        }
+        new_paths = new_paths.path(new_path, item);
     }
 
     openapi.paths = new_paths.build();
+}
+
+#[cfg(test)]
+mod openapi_tests {
+    use super::*;
+
+    #[test]
+    fn swagger_contains_every_api_endpoint_and_root_image_download() {
+        config::init();
+        let config = config::Config::global();
+        let mut spec = ApiDoc::openapi();
+        update_openapi_paths(&mut spec, config);
+        let json = serde_json::to_value(spec).unwrap();
+        let base = config.server.routes.base.trim_end_matches('/');
+        for (path, method) in [
+            ("/auth/login", "get"),
+            ("/auth/callback", "get"),
+            ("/auth/me", "get"),
+            ("/auth/logout", "get"),
+            ("/admin/users", "get"),
+            ("/investor/stats", "get"),
+            ("/discord/stats/me", "get"),
+            ("/admin/discord/stats", "get"),
+            ("/badges/me/refresh", "post"),
+            ("/badges/players/{player}/refresh", "post"),
+            ("/badges/discord/{user}/refresh", "post"),
+            ("/admin/badges/discord/{user}/evaluate", "post"),
+            ("/admin/badges/players/{player}/evaluate", "post"),
+            ("/admin/badges/award", "post"),
+        ] {
+            assert!(
+                json["paths"][format!("{base}{path}")][method].is_object(),
+                "Missing {method} {path}"
+            );
+        }
+        assert!(json["paths"]["/generated_images/{kind}/{owner}/{filename}"]["get"].is_object());
+        let personal_image_path = format!(
+            "{base}{}",
+            config.server.routes.discord_summary.replace(":id", "me")
+        );
+        assert!(json["paths"][&personal_image_path]["post"].is_object());
+        assert_eq!(
+            json["paths"][&personal_image_path]["post"]["security"][0],
+            serde_json::json!({"session_cookie":[]})
+        );
+        assert_eq!(json["paths"].as_object().unwrap().len(), 20);
+        for item in json["paths"].as_object().unwrap().values() {
+            for operation in item.as_object().unwrap().values() {
+                assert!(operation["responses"]["429"].is_object());
+            }
+        }
+        assert_eq!(
+            json["components"]["securitySchemes"]["session_cookie"]["in"],
+            "cookie"
+        );
+        assert_eq!(
+            json["paths"][format!("{base}/admin/discord/stats")]["get"]["security"][0],
+            serde_json::json!({"session_cookie":[]})
+        );
+    }
+
+    #[test]
+    fn configured_paths_support_multiple_parameters_and_images_stay_at_root() {
+        config::init();
+        let mut config = config::Config::global().clone();
+        config.server.routes.base = "/v2/api".into();
+        config.server.routes.discord_summary = "/profiles/:id/discord".into();
+        config.server.routes.minecraft_summary = "/profiles/:uuid/minecraft".into();
+        config.server.routes.monitoring = "/health".into();
+        let mut spec = ApiDoc::openapi();
+        update_openapi_paths(&mut spec, &config);
+        for path in [
+            "/v2/api/profiles/{id}/discord",
+            "/v2/api/profiles/me/discord",
+            "/v2/api/profiles/{uuid}/minecraft",
+            "/v2/api/health",
+            "/v2/api/health/check/{type}/{name}",
+            "/generated_images/{kind}/{owner}/{filename}",
+        ] {
+            assert!(spec.paths.paths.contains_key(path), "Missing {path}");
+        }
+    }
 }

@@ -136,3 +136,5 @@ Deep dives into specific modules:
 
 ---
 Built by [matheo-1712](https://github.com/matheo-1712)
+
+Discord activity JSON endpoints and request limits: [documentation](docs/discord_statistics.md).

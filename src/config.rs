@@ -107,6 +107,9 @@ pub struct ServerConfig {
     pub host: String,
     /// Port to bind the server to.
     pub port: u16,
+    /// Only these direct peers may supply X-Forwarded-For for client identification.
+    #[serde(default)]
+    pub trusted_proxies: Vec<std::net::IpAddr>,
     /// Internal API route paths.
     pub routes: InternalRoutes,
 }

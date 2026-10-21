@@ -13,12 +13,18 @@ use tracing::{debug, error, warn};
 
 /// Orchestrates the process of fetching Discord data and generating a summary image.
 pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, String> {
-    let user = fetch_discord_data(id).await?;
-    services::generate_discord_profile(user).await
+    let snapshot = tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        super::discord_activity::snapshot(Some(id)),
+    )
+    .await
+    .map_err(|_| "Statistics timeout")??;
+    let user = snapshot.user.ok_or("Missing Discord profile")?;
+    services::generate_discord_profile(user, &snapshot.activity).await
 }
 
 /// Private helper to aggregate Discord user info and stats from PocketBase.
-async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
+pub(super) async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
     debug!(
         "Action: Fetching Discord data from PocketBase for discord_id: {}",
         discord_id
@@ -30,12 +36,19 @@ async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
     // 1. Fetch user info by Discord ID
     let user_filter = format!("discord_id = '{}'", discord_id);
     let users: Vec<DiscordUser> = pb
-        .list_all_records(DISCORD_USERS_COLLECTION, &user_filter)
+        .list_bounded_records(DISCORD_USERS_COLLECTION, &user_filter)
         .await?;
     let mut user = users
         .into_iter()
         .next()
         .ok_or_else(|| format!("User not found with discord_id: {}", discord_id))?;
+
+    if user.discord_id != discord_id
+        || user.id.is_empty()
+        || !user.id.bytes().all(|b| b.is_ascii_alphanumeric())
+    {
+        return Err("Invalid Discord account relation".into());
+    }
 
     // 2. Fetch user stats
     let filter = format!(
@@ -91,28 +104,12 @@ async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, String> {
 
     debug!("Final processed badges count: {}", processed_badges.len());
 
-    // 4. Fetch user stats (using list_all_records to avoid 100-item limit)
+    // 4. Fetch bounded history across all pages.
     let raw_stats: Vec<serde_json::Value> = pb
-        .list_all_records(DISCORD_USER_STATS_COLLECTION, &filter)
+        .list_bounded_records(DISCORD_USER_STATS_COLLECTION, &filter)
         .await?;
 
-    let mut processed_stats = Vec::new();
-    for mut val in raw_stats {
-        if let Some(obj) = val.as_object_mut()
-            && let Some(vocal_val) = obj.get("vocal_time").filter(|v| v.is_number())
-        {
-            let as_string = vocal_val.to_string();
-            obj.insert("vocal_time".to_string(), serde_json::json!(as_string));
-        }
-
-        match serde_json::from_value::<DiscordStats>(val) {
-            Ok(stat) => processed_stats.push(stat),
-            Err(e) => {
-                error!("Failed to parse stat record: {}", e);
-                return Err(format!("Stat parsing error: {}", e));
-            }
-        }
-    }
+    let processed_stats = super::discord_activity::parse_stats(raw_stats)?;
 
     user.stats = processed_stats;
 
