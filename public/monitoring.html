@@ -47,23 +47,43 @@
         const lastUpdate = document.getElementById('last-update');
         const refreshIndicator = document.getElementById('refresh-indicator');
 
-        let globalServicesList = null;
+        let structureKey = null;
 
-        async function initDashboard() {
+        async function refreshDashboard() {
+            refreshIndicator.classList.add('pulse');
+            lastUpdate.textContent = 'Actualisation...';
             try {
-                // Étape 1 : Récupérer la liste complète des services configurés
-                const response = await fetch(API_URL);
+                const response = await fetch(API_URL, { cache: 'no-store' });
+                if (!response.ok) throw new Error('HTTP ' + response.status);
                 const data = await response.json();
-                globalServicesList = data.services;
-                
-                // Étape 2 : Rendu immédiat de TOUTE la structure (catégories + cartes vides)
-                renderInitialStructure(data.services);
-                
-                // Étape 3 : Lancer les checks individuels pour remplir les cartes
-                fetchAllServicesIndividually(data.services);
-                
+                if (!Array.isArray(data.services)) throw new Error('Réponse invalide');
+                const key = JSON.stringify(data.services.map(s => [s.type_name, s.name]));
+                if (structureKey !== key) {
+                    renderInitialStructure(data.services);
+                    structureKey = key;
+                }
+                for (const service of data.services) {
+                    const cardId = safeId(service.type_name + ':' + service.name);
+                    updateUI(
+                        document.getElementById('service-' + cardId),
+                        document.getElementById('status-badge-' + cardId),
+                        document.getElementById('latency-' + cardId),
+                        document.getElementById('meta-' + cardId),
+                        service
+                    );
+                }
+                refreshIndicator.classList.remove('bg-rose-500');
+                refreshIndicator.classList.add('bg-emerald-500');
+                lastUpdate.textContent = 'Mise à jour : ' + new Date().toLocaleTimeString('fr-FR');
             } catch (error) {
-                grid.innerHTML = `<div class="col-span-full text-center py-20 text-rose-500">Erreur lors de l'initialisation du dashboard.</div>`;
+                lastUpdate.textContent = 'Monitoring indisponible — ' + error.message + ' (nouvelle tentative dans 30 s)';
+                refreshIndicator.classList.remove('bg-emerald-500');
+                refreshIndicator.classList.add('bg-rose-500');
+                if (structureKey === null) {
+                    grid.textContent = 'Impossible de récupérer les états des services. Nouvelle tentative dans 30 s.';
+                }
+            } finally {
+                refreshIndicator.classList.remove('pulse');
             }
         }
 
@@ -82,13 +102,13 @@
                     </div>
                 `;
                 html += typeServices.map(s => `
-                    <div id="service-${safeId(s.name)}" class="service-card glass border border-slate-800 rounded-3xl p-6">
+                    <div id="service-${safeId(s.type_name + ':' + s.name)}" class="service-card glass border border-slate-800 rounded-3xl p-6">
                         <div class="flex justify-between items-start mb-4">
                             <div>
                                 <h3 class="font-bold text-lg text-white mb-1">${s.name}</h3>
                                 <span class="text-xs font-mono uppercase tracking-widest text-slate-500">${s.type_name}</span>
                             </div>
-                            <div id="status-badge-${safeId(s.name)}" class="flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-slate-900/50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
+                            <div id="status-badge-${safeId(s.type_name + ':' + s.name)}" class="flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-slate-900/50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
                                 <div class="w-1.5 h-1.5 rounded-full bg-slate-700 pulse"></div>
                                 EN ATTENTE
                             </div>
@@ -97,45 +117,15 @@
                             <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
                                 <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
                             </svg>
-                            <span id="latency-${safeId(s.name)}">-- ms</span>
+                            <span id="latency-${safeId(s.type_name + ':' + s.name)}">-- ms</span>
                         </div>
-                        <div id="meta-${safeId(s.name)}" class="mt-4 pt-4 border-t border-slate-800/50 opacity-50 italic text-xs text-slate-600">
+                        <div id="meta-${safeId(s.type_name + ':' + s.name)}" class="mt-4 pt-4 border-t border-slate-800/50 opacity-50 italic text-xs text-slate-600">
                             Récupération des données...
                         </div>
                     </div>
                 `).join('');
             }
             grid.innerHTML = html;
-        }
-
-        async function fetchAllServicesIndividually(services) {
-            refreshIndicator.classList.add('pulse');
-            lastUpdate.textContent = `Actualisation...`;
-            
-            const promises = services.map(s => fetchSingleService(s));
-            await Promise.all(promises);
-            
-            refreshIndicator.classList.remove('pulse');
-            lastUpdate.textContent = `Mise à jour : ${new Date().toLocaleTimeString('fr-FR')}`;
-        }
-
-        async function fetchSingleService(service) {
-            const cardId = safeId(service.name);
-            const badge = document.getElementById(`status-badge-${cardId}`);
-            const latency = document.getElementById(`latency-${cardId}`);
-            const meta = document.getElementById(`meta-${cardId}`);
-            const card = document.getElementById(`service-${cardId}`);
-
-            try {
-                const url = `${API_URL}/check/${service.type_name}/${encodeURIComponent(service.name)}`;
-                const response = await fetch(url);
-                if (!response.ok) throw new Error('Failed');
-                const result = await response.json();
-                
-                updateUI(card, badge, latency, meta, result);
-            } catch (error) {
-                updateUI(card, badge, latency, meta, { ...service, status: 'DOWN', error: 'Service injoignable' });
-            }
         }
 
         function updateUI(card, badge, latency, meta, result) {
@@ -204,19 +194,17 @@
         }
 
         function safeId(name) {
-            return name.toLowerCase().replace(/[^a-z0-9]/g, '-');
+            return Array.from(name, c => c.codePointAt(0).toString(16)).join('-');
         }
 
         async function startRefreshLoop() {
             while (true) {
                 await new Promise(r => setTimeout(r, 30000));
-                if (globalServicesList) {
-                    await fetchAllServicesIndividually(globalServicesList);
-                }
+                await refreshDashboard();
             }
         }
 
-        initDashboard().then(() => {
+        refreshDashboard().then(() => {
             startRefreshLoop();
         });
     </script>
