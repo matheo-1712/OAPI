@@ -243,7 +243,7 @@ mod tests {
     fn oauth_state_rejects_expiry_tampering_and_wrong_key() {
         let state = OAuthState {
             nonce: "random-nonce".into(),
-            return_to: "/investor.html".into(),
+            return_to: "/tools.html".into(),
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let token = encode(
@@ -254,7 +254,7 @@ mod tests {
         .unwrap();
         assert_eq!(
             decode_oauth_state(&token, TEST_SECRET).as_deref(),
-            Some("/investor.html")
+            Some("/tools.html")
         );
         assert!(decode_oauth_state(&format!("{}tampered", token), TEST_SECRET).is_none());
         assert!(decode_oauth_state(&token, "another-test-secret-at-least-32-bytes").is_none());

@@ -1,47 +1,4 @@
-<!DOCTYPE html>
-<html lang="fr" class="dark">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>OAPI - Status Dashboard</title>
-    <!-- nosemgrep: html.security.audit.missing-integrity.missing-integrity -->
-    <script src="https://cdn.tailwindcss.com"></script>
-    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&display=swap" rel="stylesheet">
-    <style>
-        body { font-family: 'Inter', sans-serif; }
-        .glass { background: rgba(30, 41, 59, 0.7); backdrop-filter: blur(12px); }
-        .pulse { animation: pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite; }
-        @keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: .5; } }
-        .service-card { transition: all 0.3s ease; }
-    </style>
-</head>
-<body class="bg-slate-950 text-slate-200 min-h-screen">
-    <div class="max-w-6xl mx-auto px-4 py-12">
-        <!-- Header -->
-        <div class="flex flex-col md:flex-row md:items-center justify-between mb-12 gap-6">
-            <div>
-                <h1 class="text-4xl font-bold tracking-tight text-white mb-2">Service Status</h1>
-                <p class="text-slate-400">Monitoring en temps réel de l'infrastructure Antre des Loutres.</p>
-            </div>
-            <div class="flex items-center gap-4 glass rounded-2xl px-6 py-3 border border-slate-800">
-                <div id="refresh-indicator" class="w-2 h-2 rounded-full bg-emerald-500 shadow-[0_0_10px_#10b981]"></div>
-                <span class="text-sm font-medium text-slate-300" id="last-update">Initialisation...</span>
-            </div>
-        </div>
-
-        <!-- Dashboard Grid -->
-        <div id="status-grid" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
-            <!-- Initial static loading state -->
-            <div class="col-span-full text-center py-20 text-slate-500 italic">Chargement de la configuration...</div>
-        </div>
-
-        <!-- Footer -->
-        <div class="mt-16 text-center text-slate-500 text-sm">
-            <p>&copy; 2026 OAPI - Otter API System</p>
-        </div>
-    </div>
-
-    <script>
+<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Les services de l’Antre — OAPI</title><link rel="stylesheet" href="/theme.css"></head><body><div class="shell"><a class="skip" href="#main">Aller au contenu</a><header class="topbar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">◈</span><span>Antre des Loutres<small>OAPI · Portail communautaire</small></span></a><nav class="top-links" aria-label="Navigation principale"><a href="/">Accueil</a><a href="/tools.html">Atelier</a><a href="/explorer.html">API</a><a href="/monitoring.html" aria-current="page">Monitoring</a><a href="/api/auth/login?return_to=/tools.html">Connexion Discord</a><a href="https://antredesloutres.fr/">Le site de l’Antre ↗</a></nav></header><main id="main" class="page-main"><div class="page-heading"><span class="eyebrow">Les outils de l’Antre</span><h1>Les services de l’Antre</h1><p>Disponibilité des bots, serveurs Minecraft et services. Les états sont actualisés toutes les 30 secondes.</p></div><div class="refresh-line" role="status"><span id="refresh-indicator" class="indicator"></span><span id="last-update">Initialisation…</span></div><div id="status-grid" class="monitor-grid"><p>Chargement des services…</p></div></main><footer class="footer"><span>© 2026 Antre des Loutres · OAPI</span><span><a href="/explorer.html">Explorer l’API</a> · <a href="https://antredesloutres.fr/">L’Antre des Loutres ↗</a></span></footer></div><script>
         const API_URL = '/api/monitoring';
         const grid = document.getElementById('status-grid');
         const lastUpdate = document.getElementById('last-update');
@@ -87,102 +44,29 @@
             }
         }
 
-        function renderInitialStructure(services) {
-            const grouped = groupServices(services);
-            let html = '';
-            for (const [type, typeServices] of Object.entries(grouped)) {
-                const config = { color: 'text-slate-400' };
-                html += `
-                    <div class="col-span-full mt-12 mb-6 first:mt-0">
-                        <div class="flex items-center gap-4">
-                            <h2 class="text-xl font-black ${config.color} uppercase tracking-[0.2em]">${type}</h2>
-                            <div class="h-px bg-slate-800/50 flex-grow ml-4"></div>
-                            <span class="text-xs font-medium text-slate-600">${typeServices.length} service(s)</span>
-                        </div>
-                    </div>
-                `;
-                html += typeServices.map(s => `
-                    <div id="service-${safeId(s.type_name + ':' + s.name)}" class="service-card glass border border-slate-800 rounded-3xl p-6">
-                        <div class="flex justify-between items-start mb-4">
-                            <div>
-                                <h3 class="font-bold text-lg text-white mb-1">${s.name}</h3>
-                                <span class="text-xs font-mono uppercase tracking-widest text-slate-500">${s.type_name}</span>
-                            </div>
-                            <div id="status-badge-${safeId(s.type_name + ':' + s.name)}" class="flex items-center gap-2 px-3 py-1 rounded-full border border-slate-800 bg-slate-900/50 text-slate-500 text-[10px] font-bold uppercase tracking-wider">
-                                <div class="w-1.5 h-1.5 rounded-full bg-slate-700 pulse"></div>
-                                EN ATTENTE
-                            </div>
-                        </div>
-                        <div class="flex items-center gap-2 text-sm text-slate-500">
-                            <svg class="w-4 h-4" fill="none" stroke="currentColor" viewBox="0 0 24 24">
-                                <path stroke-linecap="round" stroke-linejoin="round" stroke-width="2" d="M13 10V3L4 14h7v7l9-11h-7z"/>
-                            </svg>
-                            <span id="latency-${safeId(s.type_name + ':' + s.name)}">-- ms</span>
-                        </div>
-                        <div id="meta-${safeId(s.type_name + ':' + s.name)}" class="mt-4 pt-4 border-t border-slate-800/50 opacity-50 italic text-xs text-slate-600">
-                            Récupération des données...
-                        </div>
-                    </div>
-                `).join('');
-            }
-            grid.innerHTML = html;
+
+        function escapeHtml(value) {
+            return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
         }
-
+        function renderInitialStructure(services) {
+            grid.innerHTML = Object.entries(groupServices(services)).map(([type, items]) =>
+                '<div class="monitor-group"><h2>' + escapeHtml(type) + '</h2><span>' + items.length + ' service(s)</span></div>' +
+                items.map(s => {
+                    const id = safeId(s.type_name + ':' + s.name);
+                    return '<article class="service-card" id="service-' + id + '"><div class="service-head"><div><h3>' + escapeHtml(s.name) + '</h3><span class="muted">' + escapeHtml(s.type_name) + '</span></div><span class="pill" id="status-badge-' + id + '">En attente</span></div><div class="service-latency" id="latency-' + id + '">— ms</div><div class="service-meta" id="meta-' + id + '">Vérification…</div></article>';
+                }).join('')
+            ).join('') || '<p>Aucun service configuré.</p>';
+        }
         function updateUI(card, badge, latency, meta, result) {
-            const isUp = result.status === 'UP';
-            
-            // Update Badge
-            const statusColor = isUp ? 'bg-emerald-500/10 text-emerald-400 border-emerald-500/20' : 'bg-rose-500/10 text-rose-400 border-rose-500/20';
-            const statusDot = isUp ? 'bg-emerald-500 shadow-[0_0_8px_#10b981]' : 'bg-rose-500 shadow-[0_0_8px_#ef4444]';
-            
-            badge.className = `flex items-center gap-2 px-3 py-1 rounded-full border ${statusColor} text-[10px] font-bold uppercase tracking-wider`;
-            badge.innerHTML = `<div class="w-1.5 h-1.5 rounded-full ${statusDot}"></div> ${result.status}`;
-            
-            // Update Latency
-            latency.textContent = `${result.response_time_ms || 0} ms`;
-            latency.parentElement.classList.remove('text-slate-500');
-            latency.parentElement.classList.add('text-slate-400');
-
-            // Update Meta
-            let metadataHtml = '';
-            if (isUp && result.metadata) {
-                if (result.type_name === 'discord') {
-                    const m = result.metadata;
-                    metadataHtml = `
-                        <div class="flex items-center gap-3">
-                            <img src="${m.discord.avatar}" class="w-10 h-10 rounded-full border border-slate-700" alt="Avatar">
-                            <div class="text-xs">
-                                <div class="font-semibold text-slate-300">v${m.version}</div>
-                                <div class="text-slate-500">Uptime: ${m.uptime.human}</div>
-                                <div class="text-slate-500">Ping: ${m.discord.ping}ms</div>
-                            </div>
-                        </div>
-                    `;
-                } else if (result.type_name === 'minecraft') {
-                    const m = result.metadata;
-                    const percent = Math.min(100, (m.online_players / m.max_players) * 100);
-                    metadataHtml = `
-                        <div class="flex justify-between text-xs mb-2">
-                            <span class="text-slate-400">Joueurs: ${m.online_players}/${m.max_players}</span>
-                            <span class="text-slate-300 font-medium">${Math.round(percent)}%</span>
-                        </div>
-                        <div class="w-full bg-slate-800 rounded-full h-1.5 overflow-hidden">
-                            <div class="bg-indigo-500 h-full rounded-full" style="width: ${percent}%"></div>
-                        </div>
-                    `;
-                }
-            } else if (!isUp && result.error) {
-                metadataHtml = `<span class="text-rose-400/70">${result.error}</span>`;
-            } else {
-                metadataHtml = `<span class="text-slate-500">Aucune donnée additionnelle</span>`;
-            }
-            
-            meta.innerHTML = metadataHtml;
-            meta.className = "mt-4 pt-4 border-t border-slate-800/50 text-xs";
-            meta.classList.remove('opacity-50', 'italic', 'text-slate-600');
-            
-            // Card Hover
-            card.classList.add('hover:scale-[1.02]', 'hover:border-slate-700');
+            const up = result.status === 'UP';
+            badge.className = 'pill ' + (up ? 'up' : 'down');
+            badge.textContent = up ? '● En ligne' : '● Hors ligne';
+            latency.textContent = result.response_time_ms + ' ms';
+            const m = result.metadata;
+            if (!up) meta.textContent = result.error || 'Le service ne répond pas.';
+            else if (result.type_name === 'discord' && m) meta.textContent = 'Version ' + m.version + ' · Uptime : ' + m.uptime.human + ' · Ping : ' + m.discord.ping + ' ms';
+            else if (result.type_name === 'minecraft' && m) meta.textContent = m.online_players + ' / ' + m.max_players + ' joueurs';
+            else meta.textContent = 'Le service répond correctement.';
         }
 
         function groupServices(services) {
@@ -207,6 +91,4 @@
         refreshDashboard().then(() => {
             startRefreshLoop();
         });
-    </script>
-</body>
-</html>
+    </script></body></html>

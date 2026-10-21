@@ -240,8 +240,8 @@ mod tests {
     #[test]
     fn test_safe_return_to_valid() {
         assert_eq!(
-            safe_return_to(Some("/admin.html".to_string())),
-            "/admin.html"
+            safe_return_to(Some("/tools.html".to_string())),
+            "/tools.html"
         );
         assert_eq!(safe_return_to(Some("/".to_string())), "/");
         assert_eq!(
@@ -254,7 +254,7 @@ mod tests {
     fn test_safe_return_to_invalid() {
         assert_eq!(safe_return_to(Some("https://google.com".to_string())), "/");
         assert_eq!(safe_return_to(Some("//malicious.com".to_string())), "/");
-        assert_eq!(safe_return_to(Some("admin.html".to_string())), "/");
+        assert_eq!(safe_return_to(Some("tools.html".to_string())), "/");
         assert_eq!(safe_return_to(Some("/\\evil.example".to_string())), "/");
         assert_eq!(safe_return_to(Some("/\nevil.example".to_string())), "/");
         assert_eq!(safe_return_to(None), "/");

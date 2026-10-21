@@ -20,8 +20,12 @@ pub fn static_routes() -> Router {
         .route_service("/", ServeFile::new("public/index.html"))
         .route_service("/index.html", ServeFile::new("public/index.html"))
         .route_service("/monitoring.html", ServeFile::new("public/monitoring.html"))
-        .route_service("/admin.html", ServeFile::new("public/admin.html"))
-        .route_service("/investor.html", ServeFile::new("public/investor.html"))
+        .route_service("/theme.css", ServeFile::new("public/theme.css"))
+        .route_service("/api-client.js", ServeFile::new("public/api-client.js"))
+        .route_service("/explorer.js", ServeFile::new("public/explorer.js"))
+        .route_service("/tools.js", ServeFile::new("public/tools.js"))
+        .route_service("/explorer.html", ServeFile::new("public/explorer.html"))
+        .route_service("/tools.html", ServeFile::new("public/tools.html"))
         .route_service("/font/ARIAL.TTF", ServeFile::new("public/font/ARIAL.TTF"))
 }
 
