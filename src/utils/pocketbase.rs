@@ -6,6 +6,25 @@ use crate::config::Config;
 use serde::Deserialize;
 use tracing::{debug, error};
 
+/// Preserve transport causes (DNS, TLS, connection, timeout) without logging query data.
+fn transport_error(context: &str, error: reqwest::Error) -> String {
+    let kind = if error.is_timeout() {
+        "timeout"
+    } else if error.is_connect() {
+        "connection"
+    } else {
+        "transport"
+    };
+    let error = error.without_url();
+    let mut message = format!("{context} [{kind}]: {error}");
+    let mut source = std::error::Error::source(&error);
+    while let Some(cause) = source {
+        message.push_str(&format!(": {cause}"));
+        source = cause.source();
+    }
+    message
+}
+
 /// Pocketbase authentication response for admins.
 #[derive(Deserialize)]
 struct AdminAuthResponse {
@@ -90,7 +109,7 @@ impl PocketbaseClient {
             }))
             .send()
             .await
-            .map_err(|e| format!("Pocketbase login request failed: {}", e))?;
+            .map_err(|e| transport_error("Pocketbase login request failed", e))?;
 
         if !resp.status().is_success() {
             let status = resp.status();
@@ -246,7 +265,7 @@ impl PocketbaseClient {
             .query(&params)
             .send()
             .await
-            .map_err(|e| format!("Failed to fetch {}: {}", description, e))?;
+            .map_err(|e| transport_error(&format!("Failed to fetch {}", description), e))?;
 
         let final_url = resp.url().to_string();
         let status = resp.status();

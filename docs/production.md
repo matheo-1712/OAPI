@@ -10,8 +10,18 @@ sur l'hôte qui termine HTTPS. PocketBase reste un service externe.
 2. Définir `OAPI_ENV=production` et `RUST_LOG=info`.
 3. Définir `DISCORD_REDIRECT_URL=https://votre-domaine/api/auth/callback` et enregistrer
    exactement cette URL dans l'application Discord.
-4. Définir `PB_URL` vers PocketBase, accessible depuis le conteneur. `127.0.0.1`
-   désigne le conteneur lui-même. Utiliser HTTPS pour un accès distant.
+4. OAPI rejoint le réseau Docker externe `pocketbase_network` par défaut et utilise
+   `PB_URL=http://pocketbase:8090`. Définir `POCKETBASE_NETWORK` dans `.env` avec
+   le nom du réseau existant de PocketBase s’il diffère. Le conteneur PocketBase
+   doit être joignable sous le nom ou alias `pocketbase` et écouter sur `0.0.0.0:8090`.
+   Vérifier son réseau avec `docker inspect pocketbase --format '{{json .NetworkSettings.Networks}}'`.
+   Si aucun réseau commun ne convient, créer `docker network create pocketbase_network`,
+   puis y connecter PocketBase avec `docker network connect pocketbase_network pocketbase`.
+   `PB_URL` est transmis au build et au lancement ; une ancienne valeur dans `.env`
+   doit donc être remplacée. Sans Compose, l’image utilise aussi cette URL par défaut,
+   modifiable avec `docker build --build-arg PB_URL=http://pocketbase:8090 .`
+   ou avec `docker run --network pocketbase_network -e PB_URL=http://pocketbase:8090 ...`.
+   Pour un accès distant, utiliser HTTPS.
 5. Adapter `deploy/config.production.yaml` : rôles Discord, services surveillés et
    éventuels paramètres de routes. Les valeurs absentes viennent de `default_config.yaml`.
 6. Configurer le reverse proxy vers `http://127.0.0.1:9003` s'il tourne sur l'hôte,

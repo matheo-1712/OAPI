@@ -1,13 +1,17 @@
 services:
   oapi:
     container_name: api-oapi
-    build: .
+    build:
+      context: .
     restart: unless-stopped
     init: true
     env_file: .env
     environment:
       OAPI_ENV: production
       RUST_LOG: info
+      PB_URL: http://pocketbase:8090
+    networks:
+      - pocketbase
     ports:
       - "9003:9003"
     volumes:
@@ -29,3 +33,8 @@ services:
 
 volumes:
   generated_images:
+
+networks:
+  pocketbase:
+    external: true
+    name: ${POCKETBASE_NETWORK:-pocketbase_network}

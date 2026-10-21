@@ -17,7 +17,8 @@ COPY default_config.yaml badges.yaml ./
 COPY deploy/config.production.yaml ./config.yaml
 RUN mkdir generated_images && chown oapi:oapi generated_images
 USER 10001:10001
-ENV OAPI_ENV=production RUST_LOG=info
+ARG PB_URL=http://pocketbase:8090
+ENV OAPI_ENV=production RUST_LOG=info PB_URL=${PB_URL}
 EXPOSE 9003
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
     CMD curl --fail --silent http://127.0.0.1:9003/healthz || exit 1
