@@ -42,3 +42,13 @@ Chaque connexion utilise un état signé et aléatoire, valable dix minutes, li�
 Les images sont enregistrées hors du dossier public. Leur lecture exige une session et le compte propriétaire, ou un administrateur. Les comptes Minecraft sont liés via le champ discord_user de PocketBase. Les réponses API et images portent Cache-Control: no-store. Les anciennes images du dossier public ne sont plus servies ; elles seront régénérées à la demande.
 
 En production, définir OAPI_ENV=production, utiliser une URL de retour Discord HTTPS et terminer TLS sur le serveur ou le proxy.
+
+## Quota global
+
+Le middleware unique `handlers::rate_limit::limit_requests` s'applique à toute l'application : API, authentification, monitoring, images, Swagger, fichiers statiques et chemins inconnus. Chaque compte connecté (sujet du JWT vérifié), ou IP anonyme, dispose de **10 requêtes par minute par route**. Les paramètres dynamiques partagent le même quota : changer l'ID dans un chemin ne le réinitialise pas. Les méthodes HTTP d'un même chemin partagent ce quota. Les chemins inconnus utilisent un quota commun.
+
+La onzième requête renvoie `429 Too Many Requests`, `Retry-After` en secondes et `Cache-Control: no-store`. La fenêtre expire 60 secondes après son premier appel. Aucun rôle n'est exempté. Le cache de statistiques n'exempte pas du quota. L'ancien quota spécifique à Discord a été supprimé pour éviter un double comptage. Les entrées mémoire expirent après une minute et leur nombre est borné à 10 000 ; à saturation, les nouvelles identités/routes reçoivent également `429`.
+
+L'IP vient de la connexion TCP. Par défaut, les en-têtes transférés sont ignorés. Derrière un reverse proxy, renseigner ses IP exactes dans `server.trusted_proxies` (par exemple `["127.0.0.1"]` si le proxy local est seul à pouvoir contacter le serveur). Le proxy doit renseigner ou compléter correctement `X-Forwarded-For`. La chaîne est lue depuis la droite en ne traversant que les proxys approuvés ; une valeur invalide fournie par un proxy approuvé est rejetée. Sans cette configuration, les visiteurs anonymes derrière le même proxy partagent son quota IP. Ne pas ajouter d'IP de visiteurs à la liste des proxys approuvés.
+
+Les quotas sont locaux au processus et réinitialisés au redémarrage. Plusieurs instances nécessitent une limite partagée au proxy pour garantir un quota commun. Les routes Swagger et les ressources statiques respectent volontairement la même limite de 10 appels par minute : des rechargements répétés peuvent donc recevoir `429`.

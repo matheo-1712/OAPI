@@ -9,6 +9,25 @@ use axum::{
     response::{IntoResponse, Response},
 };
 
+/// Download a generated image as its owner or an administrator.
+#[utoipa::path(
+    get,
+    path = "/generated_images/{kind}/{owner}/{filename}",
+    tag = "Images",
+    params(
+        ("kind" = String, Path, description = "discord_summary or minecraft_summary"),
+        ("owner" = String, Path, description = "Discord ID or Minecraft UUID"),
+        ("filename" = String, Path, description = "64-character hexadecimal hash followed by .png")
+    ),
+    responses(
+        (status = 200, description = "Generated PNG image", content_type = "image/png", body = Vec<u8>),
+        (status = 401, description = "Authentication required"),
+        (status = 403, description = "Owner or administrator required"),
+        (status = 404, description = "Invalid image path or image not found"),
+        (status = 500, description = "Image read failed"),
+        (status = 503, description = "Ownership verification unavailable")
+    )
+)]
 pub async fn get_image(
     Path((kind, owner, filename)): Path<(String, String, String)>,
     Extension(claims): Extension<JwtClaims>,

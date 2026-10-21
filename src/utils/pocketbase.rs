@@ -189,6 +189,38 @@ impl PocketbaseClient {
         Ok(all_items)
     }
 
+    /// Bounded history reads for statistics: reject excessive histories, never truncate.
+    pub async fn list_bounded_records<T: for<'de> Deserialize<'de>>(
+        &self,
+        collection: &str,
+        filter: &str,
+    ) -> Result<Vec<T>, String> {
+        let mut items = Vec::new();
+        for page in 1..=200u32 {
+            let response: ListResponse<T> = self
+                .list_records_with_params(
+                    collection,
+                    [
+                        ("filter", filter.to_string()),
+                        ("page", page.to_string()),
+                        ("perPage", "500".to_string()),
+                        ("sort", "id".to_string()),
+                    ],
+                )
+                .await?;
+            if response.total_items > 100_000
+                || response.total_pages > 200
+                || response.items.len() > 500
+            {
+                return Err("Statistics history exceeds processing limit".into());
+            }
+            items.extend(response.items);
+            if page >= response.total_pages {
+                return Ok(items);
+            }
+        }
+        Err("Statistics history exceeds processing limit".into())
+    }
     async fn fetch_with_auth_and_params<T, P>(
         &self,
         url: String,
@@ -836,5 +868,52 @@ mod tests {
 
         assert!(client.count_records("players").await.is_err());
         invalid.assert_async().await;
+    }
+}
+
+#[cfg(test)]
+mod bounded_statistics_tests {
+    use super::*;
+    use mockito::{Matcher, Server};
+    #[tokio::test]
+    async fn reads_all_pages_with_filter_and_authentication_and_rejects_oversize() {
+        let mut server = Server::new_async().await;
+        let client = PocketbaseClient {
+            base_url: server.url(),
+            token: Some("stats-token".into()),
+        };
+        let filter = "discord_user = 'owner'";
+        let mut mocks = Vec::new();
+        for page in 1..=2 {
+            mocks.push(server.mock("GET", "/api/collections/discord_user_stats/records")
+                .match_header("authorization", "stats-token")
+                .match_query(Matcher::AllOf(vec![Matcher::UrlEncoded("filter".into(), filter.into()), Matcher::UrlEncoded("page".into(), page.to_string()), Matcher::UrlEncoded("sort".into(), "id".into())]))
+                .with_status(200).with_body(serde_json::json!({"page":page,"perPage":500,"totalPages":2,"totalItems":2,"items":[{"id":page}]}).to_string()).create_async().await);
+        }
+        let rows: Vec<serde_json::Value> = client
+            .list_bounded_records("discord_user_stats", filter)
+            .await
+            .unwrap();
+        assert_eq!(rows.len(), 2);
+        for mock in &mut mocks {
+            mock.assert_async().await;
+            mock.remove_async().await;
+        }
+        let excessive = server
+            .mock("GET", "/api/collections/discord_user_stats/records")
+            .match_query(Matcher::Any)
+            .with_status(200)
+            .with_body(
+                r#"{"page":1,"perPage":500,"totalPages":201,"totalItems":100001,"items":[]}"#,
+            )
+            .create_async()
+            .await;
+        assert!(
+            client
+                .list_bounded_records::<serde_json::Value>("discord_user_stats", filter)
+                .await
+                .is_err()
+        );
+        excessive.assert_async().await;
     }
 }

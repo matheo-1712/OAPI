@@ -11,3 +11,4 @@ pub use common::*;
 pub use discord::*;
 pub use minecraft::*;
 pub use server::*;
+pub mod discord_activity;

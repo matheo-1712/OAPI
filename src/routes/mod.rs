@@ -56,14 +56,31 @@ pub fn api_routes() -> Router {
             post(crate::handlers::badge_handler::refresh_discord),
         )
         .route(
-            &routes.discord_summary,
-            post(discord_handler::create_discord_summary_by_id),
-        )
-        .route(
             &routes.minecraft_summary,
             post(minecraft_handler::create_minecraft_summary_by_id),
         )
         .route_layer(axum::middleware::from_fn(middleware::require_auth));
+
+    let discord_routes = Router::new()
+        .route(
+            &routes.discord_summary.replace(":id", "me"),
+            post(discord_handler::create_my_discord_summary),
+        )
+        .route(
+            "/discord/stats/me",
+            get(crate::handlers::discord_activity::personal),
+        )
+        .route(
+            &routes.discord_summary,
+            post(discord_handler::create_discord_summary_by_id),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth));
+    let discord_admin_routes = Router::new()
+        .route(
+            "/admin/discord/stats",
+            get(crate::handlers::discord_activity::global),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_admin));
 
     let admin_routes = Router::new()
         .route(
@@ -91,6 +108,8 @@ pub fn api_routes() -> Router {
         .route("/auth/me", get(auth_handler::me))
         .route("/auth/logout", get(auth_handler::logout))
         .merge(protected_routes)
+        .merge(discord_routes)
+        .merge(discord_admin_routes)
         .merge(admin_routes)
         .merge(investor_routes)
         .route(

@@ -46,6 +46,10 @@ pub struct DiscordChannel {
     pub id: String,
     /// Channel name.
     pub name: String,
+    #[serde(default)]
+    pub nb_message: Option<i64>,
+    #[serde(default)]
+    pub vocal_time: Option<f64>,
 }
 
 /// Represents a voice connection with another user.
@@ -69,6 +73,7 @@ pub struct DiscordStats {
     /// Total time spent in voice channels (as a decimal string or duration).
     pub vocal_time: String,
     /// Date these statistics were recorded.
+    #[serde(default, deserialize_with = "deserialize_optional_date")]
     pub date_stats: String,
     /// Most active voice channels.
     #[serde(default)]
@@ -81,6 +86,12 @@ pub struct DiscordStats {
     pub vocal_with: Option<Vec<DiscordVoiceConnection>>,
     #[serde(default)]
     pub badges: Option<Vec<DiscordBadge>>,
+}
+
+fn deserialize_optional_date<'de, D: serde::Deserializer<'de>>(
+    deserializer: D,
+) -> Result<String, D::Error> {
+    Ok(Option::<String>::deserialize(deserializer)?.unwrap_or_default())
 }
 
 /// Represents badges of users

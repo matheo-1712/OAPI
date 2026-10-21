@@ -9,6 +9,25 @@ use crate::models::{JwtClaims, Role};
 use axum::{Extension, Json, extract::Path, http::StatusCode};
 use tracing::{error, info};
 
+/// Generate the connected user's Discord image without supplying an ID.
+#[utoipa::path(
+    post,
+    path = "/discord-summary/me",
+    tag = "Discord",
+    responses(
+        (status = 200, description = "Personal image generated; URL requires the owner's or administrator's session", body = ImageResponse),
+        (status = 400, description = "Invalid session Discord ID"),
+        (status = 401, description = "Authentication required"),
+        (status = 429, description = "Route quota exceeded (10 requests per minute); Retry-After in seconds"),
+        (status = 500, description = "Image generation unavailable")
+    )
+)]
+pub async fn create_my_discord_summary(
+    Extension(claims): Extension<JwtClaims>,
+) -> Result<Json<ImageResponse>, (StatusCode, String)> {
+    create_discord_summary_by_id(Path(claims.sub.clone()), Extension(claims)).await
+}
+
 /// Generates a Discord summary image for a specific user.
 ///
 /// This endpoint fetches user data and statistics from external APIs and
@@ -21,6 +40,7 @@ use tracing::{error, info};
         (status = 400, description = "Invalid Discord ID"),
         (status = 401, description = "Authentication required"),
         (status = 403, description = "User belongs to another account"),
+        (status = 429, description = "Route quota exceeded (10 requests per minute); Retry-After in seconds"),
         (status = 500, description = "Internal server error")
     ),
     params(
@@ -60,6 +80,38 @@ pub async fn create_discord_summary_by_id(
                 StatusCode::INTERNAL_SERVER_ERROR,
                 "Impossible de générer l’image.".into(),
             ))
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use axum::{body::Body, http::Request};
+    use tower::ServiceExt;
+
+    #[tokio::test]
+    async fn personal_image_requires_a_valid_session() {
+        crate::config::init();
+        let path = crate::config::Config::global()
+            .server
+            .routes
+            .discord_summary
+            .replace(":id", "me");
+        for cookie in ["", "auth_token=forged"] {
+            let response = crate::routes::api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri(&path)
+                        .header("cookie", cookie)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.headers()["cache-control"], "no-store");
         }
     }
 }
