@@ -18,7 +18,7 @@ COPY deploy/config.production.yaml ./config.yaml
 RUN mkdir generated_images && chown oapi:oapi generated_images
 USER 10001:10001
 ENV OAPI_ENV=production RUST_LOG=info
-EXPOSE 3000
+EXPOSE 9003
 HEALTHCHECK --interval=30s --timeout=3s --start-period=10s --retries=3 \
-    CMD curl --fail --silent http://127.0.0.1:3000/healthz || exit 1
+    CMD curl --fail --silent http://127.0.0.1:9003/healthz || exit 1
 CMD ["OAPI"]

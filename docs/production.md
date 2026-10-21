@@ -14,8 +14,10 @@ sur l'hôte qui termine HTTPS. PocketBase reste un service externe.
    désigne le conteneur lui-même. Utiliser HTTPS pour un accès distant.
 5. Adapter `deploy/config.production.yaml` : rôles Discord, services surveillés et
    éventuels paramètres de routes. Les valeurs absentes viennent de `default_config.yaml`.
-6. Configurer le reverse proxy vers `http://127.0.0.1:3000`, avec un certificat TLS
-   valide et redirection HTTP vers HTTPS. Le port applicatif est lié au loopback.
+6. Configurer le reverse proxy vers `http://127.0.0.1:9003` s'il tourne sur l'hôte,
+   ou `http://IP_DU_SERVEUR:9003` s'il tourne sur une autre machine, avec un certificat TLS
+   valide et redirection HTTP vers HTTPS. Docker publie le port 9003 sur les interfaces
+   réseau de l'hôte (`9003:9003`), vers le port 9003 de l'application.
    Configurer `trusted_proxies` avec les IP exactes des pairs vus par l'application
    et faire écraser `X-Forwarded-For` par le proxy. Sans cela, les visiteurs anonymes
    derrière un même proxy partagent le quota de requêtes.
@@ -31,8 +33,13 @@ docker compose config --quiet
 docker compose build --pull
 docker compose up -d
 docker compose ps
-curl --fail -i http://127.0.0.1:3000/healthz
+curl --fail -i http://127.0.0.1:9003/healthz
 ```
+
+Le port de production est défini à 9003 dans `deploy/config.production.yaml`.
+Pour le changer, aligner `server.port`, la publication dans `compose.yaml`,
+`EXPOSE` et l'URL du `HEALTHCHECK` dans `Dockerfile`, puis reconstruire et recréer
+le conteneur avec `docker compose up -d --build`.
 
 `/healthz` répond 204 sans interroger les dépendances. Le middleware global de quota
 peut répondre 429 en cas de sondes trop fréquentes ; conserver l'intervalle de 30 secondes.

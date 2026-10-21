@@ -8,7 +8,7 @@ services:
       OAPI_ENV: production
       RUST_LOG: info
     ports:
-      - "127.0.0.1:3000:3000"
+      - "9003:9003"
     volumes:
       - generated_images:/app/generated_images
       - ./deploy/config.production.yaml:/app/config.yaml:ro
