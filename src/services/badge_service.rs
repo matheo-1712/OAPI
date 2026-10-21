@@ -288,11 +288,14 @@ pub(crate) async fn can_refresh(
     kind: RecipientKind,
     claims: &crate::models::JwtClaims,
 ) -> Result<bool, String> {
-    if !valid_id(recipient) || !valid_id(&claims.sub) {
+    if !valid_id(recipient) {
         return Ok(false);
     }
     if claims.role == crate::models::Role::Admin {
         return Ok(true);
+    }
+    if !valid_id(&claims.sub) {
+        return Ok(false);
     }
     let collection = match kind {
         RecipientKind::Player => MINECRAFT_PLAYERS_COLLECTION,

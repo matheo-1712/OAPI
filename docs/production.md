@@ -1,0 +1,59 @@
+# Mise en production
+
+Cette procédure prévoit un serveur Linux avec Docker Compose et un reverse proxy
+sur l'hôte qui termine HTTPS. PocketBase reste un service externe.
+
+## Configuration
+
+1. Copier `.env.example` vers `.env` et renseigner les identifiants PocketBase et Discord.
+   Générer `JWT_SECRET` avec `openssl rand -hex 32`. Protéger `.env` avec `chmod 600 .env`.
+2. Définir `OAPI_ENV=production` et `RUST_LOG=info`.
+3. Définir `DISCORD_REDIRECT_URL=https://votre-domaine/api/auth/callback` et enregistrer
+   exactement cette URL dans l'application Discord.
+4. Définir `PB_URL` vers PocketBase, accessible depuis le conteneur. `127.0.0.1`
+   désigne le conteneur lui-même. Utiliser HTTPS pour un accès distant.
+5. Adapter `deploy/config.production.yaml` : rôles Discord, services surveillés et
+   éventuels paramètres de routes. Les valeurs absentes viennent de `default_config.yaml`.
+6. Configurer le reverse proxy vers `http://127.0.0.1:3000`, avec un certificat TLS
+   valide et redirection HTTP vers HTTPS. Le port applicatif est lié au loopback.
+   Configurer `trusted_proxies` avec les IP exactes des pairs vus par l'application
+   et faire écraser `X-Forwarded-For` par le proxy. Sans cela, les visiteurs anonymes
+   derrière un même proxy partagent le quota de requêtes.
+
+## Validation et lancement
+
+```sh
+cargo fmt --all -- --check
+cargo clippy --locked --all-targets --all-features -- -D warnings
+cargo test --locked --all-features
+node --test tests/*.test.cjs
+docker compose config --quiet
+docker compose build --pull
+docker compose up -d
+docker compose ps
+curl --fail -i http://127.0.0.1:3000/healthz
+```
+
+`/healthz` répond 204 sans interroger les dépendances. Le middleware global de quota
+peut répondre 429 en cas de sondes trop fréquentes ; conserver l'intervalle de 30 secondes.
+Vérifier ensuite via HTTPS la connexion Discord, les rôles administrateur/investisseur,
+la génération et l'accès aux images, ainsi que le monitoring de PocketBase.
+Ces vérifications nécessitent les services et identifiants réels.
+
+## Exploitation
+
+Les images persistent dans le volume `generated_images`. Sauvegarder ce volume,
+la configuration et, séparément, les données PocketBase. Vérifier la restauration
+avant l'ouverture au public. Prévoir une politique de rétention des images.
+Les quotas sont en mémoire et propres à chaque instance ; ce déploiement prévoit
+une seule instance applicative.
+
+Consulter les logs avec `docker compose logs --tail=100 oapi`. Un SIGTERM déclenche
+le drainage des requêtes ; Docker impose une limite de 45 secondes avant arrêt forcé.
+Une sonde unhealthy seule ne redémarre pas le conteneur : prévoir une alerte externe.
+Pour une mise à jour, conserver l'image précédente et une sauvegarde PocketBase,
+puis reconstruire et relancer. En cas d'échec, redéployer l'image précédente avec
+sa configuration compatible.
+
+Le conteneur s'exécute sans privilèges, avec un système de fichiers en lecture seule,
+hors images et fichiers temporaires. Ne pas ajouter `.env` à l'image ou au dépôt.

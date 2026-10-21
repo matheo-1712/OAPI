@@ -50,6 +50,8 @@ pub struct AuthConfig {
     pub discord_redirect_url: String,
     /// JWT Secret.
     pub jwt_secret: String,
+    /// Optional server-to-server administrator credential, never sent to browsers.
+    pub service_api_key: String,
 }
 
 /// Monitoring configuration for external services.
@@ -131,6 +133,13 @@ pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
 impl Config {
     pub fn validate_security(&self) -> Result<(), String> {
+        if !self.auth.service_api_key.is_empty()
+            && (self.auth.service_api_key.trim().len() < 32
+                || self.auth.service_api_key.chars().any(char::is_whitespace)
+                || self.auth.service_api_key == self.auth.jwt_secret)
+        {
+            return Err("OAPI_SERVICE_API_KEY must be a separate secret of at least 32 bytes without whitespace".into());
+        }
         if self.auth.jwt_secret.trim().len() < 32 {
             return Err("JWT_SECRET must contain at least 32 non-blank bytes".into());
         }
@@ -214,6 +223,7 @@ impl Config {
                 discord_client_secret,
                 discord_redirect_url,
                 jwt_secret,
+                service_api_key: std::env::var("OAPI_SERVICE_API_KEY").unwrap_or_default(),
             },
         })
     }

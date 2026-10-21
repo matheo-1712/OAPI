@@ -123,6 +123,10 @@ async fn main() {
     update_openapi_paths(&mut openapi, config);
 
     let app = Router::new()
+        .route(
+            "/healthz",
+            axum::routing::get(|| async { axum::http::StatusCode::NO_CONTENT }),
+        )
         .nest(&config.server.routes.base, routes::api_routes())
         .merge(SwaggerUi::new("/swagger-ui").url("/api-docs/openapi.json", openapi))
         .merge(routes::static_routes())
@@ -148,13 +152,46 @@ async fn main() {
         listener,
         app.into_make_service_with_connect_info::<SocketAddr>(),
     )
+    .with_graceful_shutdown(shutdown_signal())
     .await
     .unwrap();
 }
 
+async fn shutdown_signal() {
+    let ctrl_c = async {
+        tokio::signal::ctrl_c()
+            .await
+            .expect("Unable to listen for Ctrl+C");
+    };
+    #[cfg(unix)]
+    let terminate = async {
+        tokio::signal::unix::signal(tokio::signal::unix::SignalKind::terminate())
+            .expect("Unable to listen for SIGTERM")
+            .recv()
+            .await;
+    };
+    #[cfg(not(unix))]
+    let terminate = std::future::pending::<()>();
+
+    tokio::select! {
+        _ = ctrl_c => {},
+        _ = terminate => {},
+    }
+    tracing::info!("Shutdown requested; draining active requests");
+}
+
 /// Update OpenAPI paths to match dynamic configuration
 fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config::Config) {
-    use utoipa::openapi::security::{ApiKey, ApiKeyValue, SecurityRequirement, SecurityScheme};
+    use utoipa::openapi::security::{
+        ApiKey, ApiKeyValue, Http, HttpAuthScheme, SecurityRequirement, SecurityScheme,
+    };
+    openapi
+        .components
+        .get_or_insert_with(Default::default)
+        .add_security_scheme(
+            "service_key",
+            SecurityScheme::Http(Http::new(HttpAuthScheme::Bearer)),
+        );
     openapi
         .components
         .get_or_insert_with(Default::default)
@@ -209,6 +246,16 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
                     "session_cookie",
                     Vec::<String>::new(),
                 )]);
+                if !path.split('/').any(|segment| segment == "me") {
+                    operation
+                        .security
+                        .as_mut()
+                        .unwrap()
+                        .push(SecurityRequirement::new(
+                            "service_key",
+                            Vec::<String>::new(),
+                        ));
+                }
             }
         }
         for operation in item.operations.values_mut() {

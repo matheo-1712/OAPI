@@ -5,7 +5,6 @@ use axum::{
     middleware::Next,
     response::{IntoResponse, Response},
 };
-use axum_extra::extract::cookie::CookieJar;
 use std::{
     collections::HashMap,
     net::{IpAddr, SocketAddr},
@@ -91,10 +90,7 @@ pub async fn limit_requests(request: Request, next: Next) -> Response {
         Ok(ip) => ip,
         Err(status) => return status.into_response(),
     };
-    let jar = CookieJar::from_headers(request.headers());
-    let identity = jar
-        .get("auth_token")
-        .and_then(|cookie| crate::actions::AuthAction::verify_token(cookie.value()))
+    let identity = crate::handlers::middleware::request_claims(request.headers())
         .map(|claims| format!("user:{}", claims.sub))
         .unwrap_or_else(|| format!("ip:{ip}"));
     let route = request

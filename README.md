@@ -117,6 +117,10 @@ cargo test --all-features
 
 ## 📚 Documentation
 
+Production deployment: [guide de mise en production](./docs/production.md).
+
+Astro server integration: [Astroloutre et clé de service](./docs/astro.md).
+
 Deep dives into specific modules:
 - [📖 Architecture Overview](./docs/architecture.md) ([EN](./docs/en/architecture.md))
 - [📡 Monitoring System](./docs/monitoring.md) ([EN](./docs/en/monitoring.md))

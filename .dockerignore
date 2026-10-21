@@ -1,0 +1,13 @@
+*
+!Cargo.toml
+!Cargo.lock
+!src/
+!src/**
+!public/
+!public/**
+public/generated_images/
+!default_config.yaml
+!badges.yaml
+!deploy/
+!deploy/config.production.yaml
+!Dockerfile

@@ -1,0 +1,5 @@
+server:
+  env: production
+  host: "0.0.0.0"
+  port: 9003
+  trusted_proxies: []

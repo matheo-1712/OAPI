@@ -4,11 +4,14 @@ use crate::utils::constants::{DISCORD_USERS_COLLECTION, MINECRAFT_PLAYERS_COLLEC
 use crate::utils::pocketbase::PocketbaseClient;
 
 pub async fn can_access_minecraft(uuid: &str, claims: &JwtClaims) -> Result<bool, String> {
-    if !valid_uuid(uuid) || !valid_discord_id(&claims.sub) {
+    if !valid_uuid(uuid) {
         return Ok(false);
     }
     if claims.role == Role::Admin {
         return Ok(true);
+    }
+    if !valid_discord_id(&claims.sub) {
+        return Ok(false);
     }
     let mut pb = PocketbaseClient::new();
     pb.login().await?;
