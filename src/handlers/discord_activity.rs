@@ -8,7 +8,7 @@ async fn respond(id: Option<&str>) -> Result<Json<DiscordActivity>, (StatusCode,
     )
     .await
     .unwrap_or_else(|_| Err("Statistics timeout".into()))
-    .map(|snapshot| Json(snapshot.activity))
+    .map(|snapshot| Json(snapshot.activity.clone()))
     .map_err(|error| {
         tracing::error!("Discord statistics unavailable: {error}");
         (

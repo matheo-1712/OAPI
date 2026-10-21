@@ -48,7 +48,7 @@ async fn verify_and_check_role(
         } else {
             error!(
                 "Forbidden attempt to access protected route: {} by user with role {:?}",
-                request.uri(),
+                request.uri().path(),
                 claims.role
             );
             Err((

@@ -43,7 +43,7 @@ struct Rect {
 /// Helper to parse hex color strings like "#2ecc71"
 fn parse_hex_color(hex: &str) -> Rgba<u8> {
     let hex = hex.trim_start_matches('#');
-    if hex.len() == 6 {
+    if hex.len() == 6 && hex.bytes().all(|byte| byte.is_ascii_hexdigit()) {
         let r = u8::from_str_radix(&hex[0..2], 16).unwrap_or(88);
         let g = u8::from_str_radix(&hex[2..4], 16).unwrap_or(101);
         let b = u8::from_str_radix(&hex[4..6], 16).unwrap_or(242);
@@ -172,13 +172,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
 
     // --- DRAW AVATAR (MINECRAFT HEAD) ---
     let avatar_url = format!("https://mc-heads.net/avatar/{}/200", player.account_id);
-    let client = reqwest::Client::new();
-    let avatar_result = async {
-        let resp = client.get(&avatar_url).send().await.ok()?;
-        let bytes = resp.bytes().await.ok()?;
-        image::load_from_memory(&bytes).ok()
-    }
-    .await;
+    let avatar_result = crate::utils::image_assets::download(&avatar_url).await;
 
     if let Some(avatar_img) = avatar_result {
         let avatar = avatar_img
@@ -254,13 +248,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
                 )
             };
 
-            let client = reqwest::Client::new();
-            let badge_img_result = async {
-                let resp = client.get(&img_url).send().await.ok()?;
-                let bytes = resp.bytes().await.ok()?;
-                image::load_from_memory(&bytes).ok()
-            }
-            .await;
+            let badge_img_result = crate::utils::image_assets::download(&img_url).await;
 
             if let Some(badge_img) = badge_img_result {
                 let badge_rgba = badge_img
@@ -486,13 +474,7 @@ pub async fn generate_discord_profile(
     let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
 
     if let Some(avatar_url) = user.avatar_url {
-        let client = reqwest::Client::new();
-        let avatar_result = async {
-            let resp = client.get(avatar_url).send().await.ok()?;
-            let bytes = resp.bytes().await.ok()?;
-            image::load_from_memory(&bytes).ok()
-        }
-        .await;
+        let avatar_result = crate::utils::image_assets::download(&avatar_url).await;
 
         if let Some(avatar_img) = avatar_result {
             let mut avatar = avatar_img
@@ -527,7 +509,6 @@ pub async fn generate_discord_profile(
     tracing::debug!("Image generator received {} badges", all_badges.len());
 
     if !all_badges.is_empty() {
-        let client = reqwest::Client::new();
         let badge_size = 64;
         let badge_margin = 12;
         let total_w =
@@ -557,36 +538,7 @@ pub async fn generate_discord_profile(
                 )
             };
 
-            let badge_img_result = async {
-                let resp = client
-                    .get(&img_url)
-                    .send()
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("Failed to fetch badge image from {}: {}", img_url, e);
-                        e
-                    })
-                    .ok()?;
-                let bytes = resp
-                    .bytes()
-                    .await
-                    .map_err(|e| {
-                        tracing::error!("Failed to get badge bytes from {}: {}", img_url, e);
-                        e
-                    })
-                    .ok()?;
-                image::load_from_memory(&bytes)
-                    .map_err(|e| {
-                        tracing::error!(
-                            "Failed to load badge image from memory for {}: {}",
-                            img_url,
-                            e
-                        );
-                        e
-                    })
-                    .ok()
-            }
-            .await;
+            let badge_img_result = crate::utils::image_assets::download(&img_url).await;
 
             if let Some(badge_img) = badge_img_result {
                 tracing::debug!("Successfully loaded badge image: {}", img_url);
@@ -981,6 +933,9 @@ mod tests {
 
     #[test]
     fn test_parse_hex_color() {
+        for invalid in ["€€", "aéabc", "GGGGGG"] {
+            assert_eq!(parse_hex_color(invalid), Rgba(COLOR_ACCENT_BLURPLE));
+        }
         assert_eq!(parse_hex_color("#FF0000"), Rgba([255, 0, 0, 255]));
         assert_eq!(parse_hex_color("#00FF00"), Rgba([0, 255, 0, 255]));
         assert_eq!(parse_hex_color("#0000FF"), Rgba([0, 0, 255, 255]));
