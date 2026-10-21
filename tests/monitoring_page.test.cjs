@@ -53,3 +53,30 @@ test('card identifiers distinguish service types and punctuation', () => {
     const ids = vm.runInContext("['site:Bot', 'discord:Bot', 'site:A B', 'site:A-B'].map(safeId)", page.context);
     assert.equal(new Set(ids).size, 4);
 });
+
+test('summary reflects real service states and becomes unavailable on API failure', async () => {
+    const page = dashboard();
+    await page.refresh({ ok:true, json:async()=>({ services:[{name:'Bot',type_name:'discord',status:'UP'},{name:'MC',type_name:'minecraft',status:'DOWN'}] }) });
+    assert.equal(page.nodes.get('health-up').textContent,1);
+    assert.equal(page.nodes.get('health-down').textContent,1);
+    assert.equal(page.nodes.get('health-total').textContent,2);
+    await page.refresh({ ok:false,status:503 });
+    assert.match(page.nodes.get('health-title').textContent,/indisponible/);
+    assert.equal(page.nodes.get('health-up').textContent,1);
+});
+test('service cards separate metadata and safely disclose technical errors', () => {
+    const raw = fs.readFileSync('public/monitoring.html','utf8').match(/<script>([\s\S]*?)<\/script>/)[1].split('        refreshDashboard().then')[0];
+    const context=vm.createContext({document:{getElementById:()=>({})}});
+    vm.runInContext(raw,context);
+    context.card={};context.badge={};context.latency={};context.meta={};
+    context.result={status:'DOWN',response_time_ms:385,error:'Connection refused <img onerror=alert(1)>'};
+    vm.runInContext('updateUI(card,badge,latency,meta,result)',context);
+    assert.match(context.meta.innerHTML,/Connexion refusée/);
+    assert.match(context.meta.innerHTML,/<details/);
+    assert.ok(!context.meta.innerHTML.includes('<img'));
+    context.result={status:'UP',type_name:'discord',response_time_ms:17,metadata:{version:'3.0.0',uptime:{human:'4j'},discord:{ping:92}}};
+    vm.runInContext('updateUI(card,badge,latency,meta,result)',context);
+    assert.match(context.meta.innerHTML,/service-metrics/);
+    assert.match(context.meta.innerHTML,/Ping Discord/);
+    assert.equal(context.badge.textContent,'● En ligne');
+});

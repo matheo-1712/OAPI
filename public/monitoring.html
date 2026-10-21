@@ -1,4 +1,4 @@
-<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Les services de l’Antre — OAPI</title><link rel="stylesheet" href="/theme.css"></head><body><div class="shell"><a class="skip" href="#main">Aller au contenu</a><header class="topbar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">◈</span><span>Antre des Loutres<small>OAPI · Portail communautaire</small></span></a><nav class="top-links" aria-label="Navigation principale"><a href="/">Accueil</a><a href="/tools.html">Atelier</a><a href="/explorer.html">API</a><a href="/monitoring.html" aria-current="page">Monitoring</a><a href="/api/auth/login?return_to=/tools.html">Connexion Discord</a><a href="https://antredesloutres.fr/">Le site de l’Antre ↗</a></nav></header><main id="main" class="page-main"><div class="page-heading"><span class="eyebrow">Les outils de l’Antre</span><h1>Les services de l’Antre</h1><p>Disponibilité des bots, serveurs Minecraft et services. Les états sont actualisés toutes les 30 secondes.</p></div><div class="refresh-line" role="status"><span id="refresh-indicator" class="indicator"></span><span id="last-update">Initialisation…</span></div><div id="status-grid" class="monitor-grid"><p>Chargement des services…</p></div></main><footer class="footer"><span>© 2026 Antre des Loutres · OAPI</span><span><a href="/explorer.html">Explorer l’API</a> · <a href="https://antredesloutres.fr/">L’Antre des Loutres ↗</a></span></footer></div><script>
+<!DOCTYPE html><html lang="fr"><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Les services de l’Antre — OAPI</title><link rel="stylesheet" href="/theme.css"></head><body class="monitor-page"><div class="shell"><a class="skip" href="#main">Aller au contenu</a><header class="topbar"><a class="brand" href="/"><span class="brand-mark" aria-hidden="true">◈</span><span>Antre des Loutres<small>OAPI · Portail communautaire</small></span></a><nav class="top-links" aria-label="Navigation principale"><a href="/">Accueil</a><a href="/tools.html">Atelier</a><a href="/explorer.html">API</a><a href="/monitoring.html" aria-current="page">Monitoring</a><a href="/api/auth/login?return_to=/tools.html">Connexion Discord</a><a href="https://antredesloutres.fr/">Le site de l’Antre ↗</a></nav></header><main id="main" class="page-main"><div class="page-heading"><span class="eyebrow">Les outils de l’Antre</span><h1>Les services de l’Antre</h1><p>Disponibilité des bots, serveurs Minecraft et services. Les états sont actualisés toutes les 30 secondes.</p></div><section class="health-overview" aria-label="État global"><div><span class="eyebrow">État de l’infrastructure</span><h2 id="health-title">Connexion au monitoring…</h2><p id="health-description">Récupération des derniers contrôles.</p></div><div class="health-counts"><div><strong id="health-up">—</strong><span>en ligne</span></div><div><strong id="health-down">—</strong><span>hors ligne</span></div><div><strong id="health-total">—</strong><span>services</span></div></div></section><div class="refresh-line" role="status"><span id="refresh-indicator" class="indicator"></span><span id="last-update">Initialisation…</span></div><div id="status-grid" class="monitor-grid"><p>Chargement des services…</p></div></main><footer class="footer"><span>© 2026 Antre des Loutres · OAPI</span><span><a href="/explorer.html">Explorer l’API</a> · <a href="https://antredesloutres.fr/">L’Antre des Loutres ↗</a></span></footer></div><script>
         const API_URL = '/api/monitoring';
         const grid = document.getElementById('status-grid');
         const lastUpdate = document.getElementById('last-update');
@@ -14,6 +14,13 @@
                 if (!response.ok) throw new Error('HTTP ' + response.status);
                 const data = await response.json();
                 if (!Array.isArray(data.services)) throw new Error('Réponse invalide');
+                const online = data.services.filter(s => s.status === 'UP').length;
+                const offline = data.services.length - online;
+                document.getElementById('health-up').textContent = online;
+                document.getElementById('health-down').textContent = offline;
+                document.getElementById('health-total').textContent = data.services.length;
+                document.getElementById('health-title').textContent = !data.services.length ? 'Aucun service configuré' : offline ? 'Des services demandent votre attention' : 'Tous les services sont opérationnels';
+                document.getElementById('health-description').textContent = offline ? offline + ' service(s) hors ligne sur ' + data.services.length + '. Retrouvez les détails ci-dessous.' : 'Les derniers contrôles sont disponibles ci-dessous.';
                 const key = JSON.stringify(data.services.map(s => [s.type_name, s.name]));
                 if (structureKey !== key) {
                     renderInitialStructure(data.services);
@@ -33,6 +40,8 @@
                 refreshIndicator.classList.add('bg-emerald-500');
                 lastUpdate.textContent = 'Mise à jour : ' + new Date().toLocaleTimeString('fr-FR');
             } catch (error) {
+                document.getElementById('health-title').textContent = 'Monitoring temporairement indisponible';
+                document.getElementById('health-description').textContent = 'Les états affichés correspondent au dernier contrôle réussi. Nouvelle tentative dans 30 secondes.';
                 lastUpdate.textContent = 'Monitoring indisponible — ' + error.message + ' (nouvelle tentative dans 30 s)';
                 refreshIndicator.classList.remove('bg-emerald-500');
                 refreshIndicator.classList.add('bg-rose-500');
@@ -48,25 +57,36 @@
         function escapeHtml(value) {
             return String(value ?? '').replace(/[&<>"']/g, c => ({ '&':'&amp;', '<':'&lt;', '>':'&gt;', '"':'&quot;', "'":'&#39;' })[c]);
         }
+        const categoryNames = { api: 'API & applications', discord: 'Bots Discord', minecraft: 'Serveurs Minecraft', site: 'Sites web', 'self-hosted': 'Services hébergés', http: 'Services HTTP' };
+        const categoryIcons = { api: '&lt;/&gt;', discord: '◉', minecraft: '▦', site: '◎', 'self-hosted': '◇', http: '↗' };
         function renderInitialStructure(services) {
             grid.innerHTML = Object.entries(groupServices(services)).map(([type, items]) =>
-                '<div class="monitor-group"><h2>' + escapeHtml(type) + '</h2><span>' + items.length + ' service(s)</span></div>' +
+                '<section class="monitor-section"><div class="monitor-group"><div class="category-icon" aria-hidden="true">' + (categoryIcons[type] || '◇') + '</div><h2>' + escapeHtml(categoryNames[type] || type) + '</h2><span>' + items.length + ' service' + (items.length > 1 ? 's' : '') + '</span><div class="category-rule"></div></div><div class="monitor-cards">' +
                 items.map(s => {
                     const id = safeId(s.type_name + ':' + s.name);
-                    return '<article class="service-card" id="service-' + id + '"><div class="service-head"><div><h3>' + escapeHtml(s.name) + '</h3><span class="muted">' + escapeHtml(s.type_name) + '</span></div><span class="pill" id="status-badge-' + id + '">En attente</span></div><div class="service-latency" id="latency-' + id + '">— ms</div><div class="service-meta" id="meta-' + id + '">Vérification…</div></article>';
-                }).join('')
+                    return '<article class="service-card" id="service-' + id + '"><div class="service-head"><h3>' + escapeHtml(s.name) + '</h3><span class="pill" id="status-badge-' + id + '">En attente</span></div><div class="service-latency"><span>Temps de réponse</span><strong id="latency-' + id + '">—</strong></div><div class="service-meta" id="meta-' + id + '">Vérification…</div></article>';
+                }).join('') + '</div></section>'
             ).join('') || '<p>Aucun service configuré.</p>';
+        }
+        function metric(label, value) {
+            return '<div class="service-metric"><span>' + escapeHtml(label) + '</span><strong>' + escapeHtml(value) + '</strong></div>';
         }
         function updateUI(card, badge, latency, meta, result) {
             const up = result.status === 'UP';
+            card.className = 'service-card ' + (up ? 'service-up' : 'service-down');
             badge.className = 'pill ' + (up ? 'up' : 'down');
             badge.textContent = up ? '● En ligne' : '● Hors ligne';
             latency.textContent = result.response_time_ms + ' ms';
             const m = result.metadata;
-            if (!up) meta.textContent = result.error || 'Le service ne répond pas.';
-            else if (result.type_name === 'discord' && m) meta.textContent = 'Version ' + m.version + ' · Uptime : ' + m.uptime.human + ' · Ping : ' + m.discord.ping + ' ms';
-            else if (result.type_name === 'minecraft' && m) meta.textContent = m.online_players + ' / ' + m.max_players + ' joueurs';
-            else meta.textContent = 'Le service répond correctement.';
+            if (!up) {
+                const error = result.error || 'Le service ne répond pas.';
+                const reason = /connection refused/i.test(error) ? 'Connexion refusée par le serveur' : /timed? ?out|timeout/i.test(error) ? 'Le serveur ne répond pas dans le délai prévu' : /HTTP Error/i.test(error) ? 'Le service renvoie une erreur HTTP' : 'Le service ne répond pas au contrôle';
+                meta.innerHTML = '<div class="service-error">' + escapeHtml(reason) + '</div><details class="error-details"><summary>Détail du contrôle</summary><p>' + escapeHtml(error) + '</p></details>';
+            } else if (result.type_name === 'discord' && m) {
+                meta.innerHTML = '<div class="service-metrics">' + metric('Version', m.version || '—') + metric('Uptime', m.uptime?.human || '—') + metric('Ping Discord', m.discord?.ping == null ? '—' : m.discord.ping + ' ms') + '</div>';
+            } else if (result.type_name === 'minecraft' && m) {
+                meta.innerHTML = '<div class="service-metrics">' + metric('Joueurs connectés', m.online_players + ' / ' + m.max_players) + '</div>';
+            } else meta.innerHTML = '<span class="service-ok">✓ Le service répond correctement</span>';
         }
 
         function groupServices(services) {
