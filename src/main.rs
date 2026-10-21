@@ -133,7 +133,9 @@ async fn main() {
         .layer(axum::middleware::from_fn(
             handlers::middleware::private_response,
         ))
-        .layer(TraceLayer::new_for_http());
+        .layer(TraceLayer::new_for_http().make_span_with(|request: &axum::http::Request<axum::body::Body>| {
+            tracing::info_span!("request", method = %request.method(), path = request.uri().path())
+        }));
 
     let addr_str = format!("{}:{}", config.server.host, config.server.port);
     let addr: SocketAddr = addr_str.parse().expect("Invalid address/port in config");

@@ -50,3 +50,9 @@ L'image réutilise ce même compagnon le plus régulier. Les règles d'accès et
 `POST /api/discord-summary/me` (préfixe et chemin adaptés à la configuration) génère l'image du sujet JWT connecté et retourne le JSON `ImageResponse` contenant son URL protégée. Aucun ID ni corps de requête n'est nécessaire. La route partage l'authentification, le quota global et le cache des statistiques et de la génération par ID. Swagger décrit cette route avec la session `auth_token` et la réponse `429` avec `Retry-After`.
 
 
+
+## Bornes des images et du cache
+
+Les téléchargements d'images sont limités à 5 secondes et 4 Mio, sans redirection. Les sources autorisées sont les fichiers de l'origine PocketBase configurée (`/api/files/`), `https://cdn.discordapp.com`, `https://media.discordapp.net` et `https://mc-heads.net`. Les URLs avec identifiants sont rejetées. Le décodage est borné à 4096 pixels par dimension et 32 Mio d'allocation. Une image externe refusée ou invalide est omise de la carte. Les badges hébergés sur une autre origine doivent être déplacés vers PocketBase ou une source autorisée.
+
+Le cache conserve au plus 16 entrées et regroupe les requêtes simultanées d'un même compte. Chaque entrée dispose de son propre verrou ; une récupération lente ne verrouille pas les autres comptes. Une entrée en cours d'utilisation n'est pas évincée. À saturation des 16 entrées actives, les nouvelles demandes échouent sans agrandir le cache.
