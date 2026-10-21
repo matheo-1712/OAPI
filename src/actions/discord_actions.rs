@@ -19,7 +19,7 @@ pub async fn get_discord_summary_action(id: &str) -> Result<ImageResponse, Strin
     )
     .await
     .map_err(|_| "Statistics timeout")??;
-    let user = snapshot.user.ok_or("Missing Discord profile")?;
+    let user = snapshot.user.clone().ok_or("Missing Discord profile")?;
     services::generate_discord_profile(user, &snapshot.activity).await
 }
 
@@ -97,7 +97,7 @@ pub(super) async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, 
                 processed_badges.push(badge);
             }
             Err(e) => {
-                error!("Failed to deserialize badge: {}. Raw value: {:?}", e, val);
+                error!("Failed to deserialize badge: {}", e);
             }
         }
     }

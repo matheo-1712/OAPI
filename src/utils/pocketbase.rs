@@ -211,6 +211,8 @@ impl PocketbaseClient {
             if response.total_items > 100_000
                 || response.total_pages > 200
                 || response.items.len() > 500
+                || response.page != page
+                || items.len() + response.items.len() > 100_000
             {
                 return Err("Statistics history exceeds processing limit".into());
             }
@@ -873,6 +875,30 @@ mod tests {
 
 #[cfg(test)]
 mod bounded_statistics_tests {
+    #[tokio::test]
+    async fn incorrect_page_metadata_is_rejected_instead_of_duplicating_records() {
+        let mut server = mockito::Server::new_async().await;
+        let client = super::PocketbaseClient {
+            base_url: server.url(),
+            token: Some("test-token".into()),
+        };
+        let invalid = server
+            .mock("GET", "/api/collections/discord_user_stats/records")
+            .match_query(mockito::Matcher::Any)
+            .with_status(200)
+            .with_body(
+                r#"{"page":2,"perPage":500,"totalPages":2,"totalItems":2,"items":[{"id":"a"}]}"#,
+            )
+            .create_async()
+            .await;
+        assert!(
+            client
+                .list_bounded_records::<serde_json::Value>("discord_user_stats", "")
+                .await
+                .is_err()
+        );
+        invalid.assert_async().await;
+    }
     use super::*;
     use mockito::{Matcher, Server};
     #[tokio::test]
