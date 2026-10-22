@@ -46,11 +46,16 @@ pub fn api_routes() -> Router {
     let routes = &Config::global().server.routes;
 
     // Need authentication for these routes, so we apply the auth middleware to them.
-    let protected_routes = Router::new()
+    // Website (Astroloutre) badge refresh: site_cors wraps require_auth so errors stay readable too
+    let site_protected_routes = Router::new()
         .route(
             "/badges/me/refresh",
             post(crate::handlers::badge_handler::refresh_mine),
         )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    let protected_routes = Router::new()
         .route(
             "/badges/players/:player/refresh",
             post(crate::handlers::badge_handler::refresh_player),
@@ -119,6 +124,7 @@ pub fn api_routes() -> Router {
         .route("/auth/site/login", get(auth_handler::site_login))
         .route("/auth/site/logout", get(auth_handler::site_logout))
         .merge(site_auth_routes)
+        .merge(site_protected_routes)
         .merge(protected_routes)
         .merge(discord_routes)
         .merge(discord_admin_routes)
@@ -254,6 +260,44 @@ mod tests {
                 allowed
             );
             assert_eq!(headers["vary"], "Origin");
+        }
+    }
+
+    #[tokio::test]
+    async fn site_badge_refresh_passes_csrf_and_is_readable_by_the_website_only() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        // Without a session: the website reaches the auth check (401), other origins stop at CSRF (403)
+        for (origin, status, allowed) in [
+            (site.as_str(), StatusCode::UNAUTHORIZED, true),
+            ("https://evil.example", StatusCode::FORBIDDEN, false),
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/badges/me/refresh")
+                        .header("origin", origin)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status);
+            let headers = response.headers();
+            assert_eq!(
+                headers
+                    .get("access-control-allow-origin")
+                    .map(|value| value.to_str().unwrap()),
+                allowed.then_some(origin)
+            );
+            assert_eq!(
+                headers.get("access-control-allow-credentials").is_some(),
+                allowed
+            );
         }
     }
 

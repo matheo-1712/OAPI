@@ -111,11 +111,14 @@ async fn verify_and_check_role(
         && !request.method().is_safe()
         && let Some(origin) = request.headers().get(axum::http::header::ORIGIN)
     {
-        let expected =
-            reqwest::Url::parse(&crate::config::Config::global().auth.discord_redirect_url)
-                .map(|url| url.origin().ascii_serialization())
-                .unwrap_or_default();
-        if origin.to_str().ok() != Some(expected.as_str()) {
+        let config = crate::config::Config::global();
+        let expected = reqwest::Url::parse(&config.auth.discord_redirect_url)
+            .map(|url| url.origin().ascii_serialization())
+            .unwrap_or_default();
+        // OAPI's own pages, plus the configured website (site_auth.url) using its session cookie
+        let origin = origin.to_str().ok();
+        let from_site = origin.is_some() && origin == config.site_origin();
+        if origin != Some(expected.as_str()) && !from_site {
             return Err((
                 StatusCode::FORBIDDEN,
                 "Cross-origin request rejected.".into(),
