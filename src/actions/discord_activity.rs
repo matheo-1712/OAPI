@@ -117,8 +117,9 @@ fn aggregate_players(
         groups.insert(user.id.clone(), (Some(user), Vec::new()));
     }
     for stat in stats {
-        if stat.discord_user.is_empty() {
-            return Err("Missing Discord account relation".into());
+        // Unassigned legacy rows remain in global totals, but have no player.
+        if stat.discord_user.trim().is_empty() {
+            continue;
         }
         let id = aliases
             .get(&stat.discord_user)
@@ -162,6 +163,31 @@ pub fn parse_stats(values: Vec<serde_json::Value>) -> Result<Vec<DiscordStats>, 
 #[cfg(test)]
 mod cache_tests {
     use super::*;
+    #[test]
+    fn unassigned_statistics_remain_in_global_totals_without_blocking_players() {
+        let rows = parse_stats(vec![
+            serde_json::json!({"id":"owned", "discord_user":"account", "message_count":2, "vocal_time":1}),
+            serde_json::json!({"id":"unassigned", "discord_user":"", "message_count":3, "vocal_time":2}),
+            serde_json::json!({"id":"blank", "discord_user":"  ", "message_count":4, "vocal_time":3}),
+        ]).unwrap();
+        let totals = aggregate(&rows).unwrap();
+        let players = aggregate_players(
+            vec![PlayerIdentity {
+                id: "account".into(),
+                discord_id: "123".into(),
+                username: "Alice".into(),
+            }],
+            rows,
+        )
+        .unwrap();
+        assert_eq!(totals.total_messages, 9);
+        assert_eq!(totals.total_vocal_hours, 6.0);
+        assert_eq!(players.len(), 1);
+        assert_eq!(players[0].id, "account");
+        assert_eq!(players[0].stats.total_messages, 2);
+        assert_eq!(players[0].stats.total_vocal_hours, 1.0);
+    }
+
     #[test]
     fn player_statistics_merge_aliases_and_include_inactive_and_deleted_accounts() {
         let users = vec![
