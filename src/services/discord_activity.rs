@@ -1,7 +1,30 @@
-use crate::models::{DiscordStats, discord_activity::*};
+use crate::models::{DiscordStats, DiscordVoiceConnection, discord_activity::*};
 use std::collections::{BTreeMap, BTreeSet};
 
+/// Business date of a record (`YYYY-MM-DD`), or `None` when absent or invalid.
+fn business_date(raw: &str) -> Option<&str> {
+    let date = raw.trim().trim_start_matches('\u{feff}');
+    date.get(..10).and_then(|date| {
+        chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
+            .ok()
+            .map(|_| date)
+    })
+}
+
+/// Migration snapshot: cumulative 2025 history, not a real activity day.
+const MIGRATION_DATE: &str = "2025-01-01";
+
 pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
+    aggregate_with_mentions(stats, &[])
+}
+
+/// Same as [`aggregate`], with `mentions`: `(date_stats, companion)` taken from other
+/// members' records that mention this member. The bot does not fill `vocal_with`
+/// symmetrically, so a day counts as shared when either member recorded the other.
+pub fn aggregate_with_mentions(
+    stats: &[DiscordStats],
+    mentions: &[(String, DiscordVoiceConnection)],
+) -> Result<DiscordActivity, String> {
     let mut days: BTreeMap<String, ActivityDay> = BTreeMap::new();
     let mut text: BTreeMap<String, ChannelTotal> = BTreeMap::new();
     let mut voice: BTreeMap<String, ChannelTotal> = BTreeMap::new();
@@ -25,15 +48,9 @@ pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
             .checked_add(stat.message_count)
             .ok_or("Message overflow")?;
         total_vocal_hours += hours;
-        let date = stat.date_stats.trim().trim_start_matches('\u{feff}');
-        let date = date.get(..10).and_then(|date| {
-            chrono::NaiveDate::parse_from_str(date, "%Y-%m-%d")
-                .ok()
-                .map(|_| date)
-        });
-        // Migration snapshot: cumulative 2025 history, not a real activity day.
-        // Keep its counters in lifetime totals only.
-        if date == Some("2025-01-01") {
+        let date = business_date(&stat.date_stats);
+        // Keep the migration snapshot counters in lifetime totals only.
+        if date == Some(MIGRATION_DATE) {
             continue;
         }
         // A companion counts once per business day, however many rows that day holds.
@@ -156,6 +173,23 @@ pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
             }
         },
     );
+    for (raw_date, companion) in mentions {
+        let Some(date) = business_date(raw_date).filter(|date| *date != MIGRATION_DATE) else {
+            continue;
+        };
+        // The member's own records name their companions best: never rename from a mention.
+        let (_, dates) = companions.entry(companion.id.clone()).or_insert_with(|| {
+            (
+                VoiceCompanion {
+                    id: companion.id.clone(),
+                    username: companion.username.clone(),
+                    records_together: 0,
+                },
+                BTreeSet::new(),
+            )
+        });
+        dates.insert(date);
+    }
     let top_voice_companion = companions
         .into_values()
         .map(|(mut companion, dates)| {

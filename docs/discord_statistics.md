@@ -42,7 +42,7 @@ La date métier `2025-01-01` est réservée au cumul importé de l'ancien systè
 
 `top_voice_companion` expose `{id, username, records_together}` pour la personne avec laquelle le membre est le plus régulièrement en vocal : celle qui apparaît dans `vocal_with` le plus grand nombre de journées distinctes (`date_stats`). Plusieurs lignes d'une même journée comptent pour une seule journée, et les lignes sans date exploitable sont ignorées pour ce classement : `records_together` est donc un nombre de journées. Il fonctionne avec le format existant `{id, username}`, sans demander de durée partagée.
 
-Le classement regroupe par ID, ignore le cumul de migration `2025-01-01` et départage les égalités par ID croissant. Sans compagnon enregistré, `top_voice_companion` est `null`. Sur la route globale admin, le classement agrège les compagnons mentionnés par tous les comptes.
+Le classement regroupe par ID, ignore le cumul de migration `2025-01-01` et départage les égalités par ID croissant. Sans compagnon enregistré, `top_voice_companion` est `null`. Sur la route globale admin, le classement agrège les compagnons mentionnés par tous les comptes. Dans la liste `players` de cette route, les mentions sont rendues symétriques : le bot ne remplit pas `vocal_with` de façon réciproque, donc une journée compte pour deux membres dès que l'un des deux a enregistré l'autre. La route personnelle `/discord/stats/me` et l'image ne lisent que les lignes du membre et restent unilatérales.
 
 L'image réutilise ce même compagnon le plus régulier. Les règles d'accès et le quota des routes existantes s'appliquent à ces champs.
 

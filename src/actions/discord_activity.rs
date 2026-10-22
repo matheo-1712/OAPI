@@ -1,9 +1,9 @@
 use crate::{
     models::{
-        DiscordStats, DiscordUser,
+        DiscordStats, DiscordUser, DiscordVoiceConnection,
         discord_activity::{DiscordActivity, PlayerActivity},
     },
-    services::discord_activity::aggregate,
+    services::discord_activity::{aggregate, aggregate_with_mentions},
     utils::{
         constants::{DISCORD_USER_STATS_COLLECTION, DISCORD_USERS_COLLECTION},
         pocketbase::PocketbaseClient,
@@ -131,14 +131,35 @@ fn aggregate_players(
             .1
             .push(stat);
     }
+    // vocal_with is not filled symmetrically by the bot: mirror each mention to the
+    // mentioned member, so a day counts as shared when either member recorded the other.
+    let mut mentions: HashMap<String, Vec<(String, DiscordVoiceConnection)>> = HashMap::new();
+    for (id, (user, stats)) in &groups {
+        let Some(user) = user else { continue };
+        let author = DiscordVoiceConnection {
+            id: user.discord_id.clone(),
+            username: user.username.clone(),
+        };
+        for stat in stats {
+            for companion in stat.vocal_with.iter().flatten() {
+                if let Some(target) = aliases.get(&companion.id).filter(|target| *target != id) {
+                    mentions
+                        .entry(target.clone())
+                        .or_default()
+                        .push((stat.date_stats.clone(), author.clone()));
+                }
+            }
+        }
+    }
     groups
         .into_iter()
         .map(|(id, (user, stats))| {
+            let mentions = mentions.get(&id).map(Vec::as_slice).unwrap_or_default();
             Ok(PlayerActivity {
+                stats: aggregate_with_mentions(&stats, mentions)?,
                 id,
                 discord_id: user.as_ref().map(|user| user.discord_id.clone()),
                 username: user.map(|user| user.username),
-                stats: aggregate(&stats)?,
             })
         })
         .collect()
@@ -186,6 +207,39 @@ mod cache_tests {
         assert_eq!(players[0].id, "account");
         assert_eq!(players[0].stats.total_messages, 2);
         assert_eq!(players[0].stats.total_vocal_hours, 1.0);
+    }
+
+    #[test]
+    fn voice_companion_days_are_symmetric_between_members() {
+        let users = vec![
+            PlayerIdentity {
+                id: "alice_pb".into(),
+                discord_id: "123".into(),
+                username: "Alice".into(),
+            },
+            PlayerIdentity {
+                id: "bob_pb".into(),
+                discord_id: "456".into(),
+                username: "Bob".into(),
+            },
+        ];
+        let rows = parse_stats(vec![
+            // Both members recorded each other on the 20th: still one day.
+            serde_json::json!({"id":"a1", "discord_user":"alice_pb", "message_count":0, "vocal_time":1, "date_stats":"2026-10-20", "vocal_with":[{"id":"456","username":"bob"}]}),
+            serde_json::json!({"id":"b1", "discord_user":"bob_pb", "message_count":0, "vocal_time":1, "date_stats":"2026-10-20", "vocal_with":[{"id":"123","username":"alice"}]}),
+            // Only Alice recorded Bob on the 21st, only Bob recorded Alice on the 22nd.
+            serde_json::json!({"id":"a2", "discord_user":"alice_pb", "message_count":0, "vocal_time":1, "date_stats":"2026-10-21", "vocal_with":[{"id":"456","username":"bob"}]}),
+            serde_json::json!({"id":"b2", "discord_user":"bob_pb", "message_count":0, "vocal_time":1, "date_stats":"2026-10-22", "vocal_with":[{"id":"123","username":"alice"}]}),
+        ]).unwrap();
+        let players = aggregate_players(users, rows).unwrap();
+        let alice = players[0].stats.top_voice_companion.as_ref().unwrap();
+        let bob = players[1].stats.top_voice_companion.as_ref().unwrap();
+        assert_eq!((alice.id.as_str(), alice.username.as_str()), ("456", "bob"));
+        assert_eq!((bob.id.as_str(), bob.username.as_str()), ("123", "alice"));
+        assert_eq!(alice.records_together, 3);
+        assert_eq!(bob.records_together, 3);
+        // Mirrored mentions never alter activity counters.
+        assert_eq!(players[0].stats.daily.len(), 2);
     }
 
     #[test]
