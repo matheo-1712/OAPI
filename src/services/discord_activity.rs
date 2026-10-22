@@ -1,4 +1,4 @@
-use crate::models::{DiscordStats, DiscordVoiceConnection, discord_activity::*};
+use crate::models::{DiscordChannel, DiscordStats, DiscordVoiceConnection, discord_activity::*};
 use std::collections::{BTreeMap, BTreeSet};
 
 /// Business date of a record (`YYYY-MM-DD`), or `None` when absent or invalid.
@@ -9,6 +9,21 @@ fn business_date(raw: &str) -> Option<&str> {
             .ok()
             .map(|_| date)
     })
+}
+
+/// Channel total for `ch`, keeping its latest stored name.
+fn channel_entry<'a>(
+    totals: &'a mut BTreeMap<String, ChannelTotal>,
+    ch: &DiscordChannel,
+) -> &'a mut ChannelTotal {
+    let entry = totals.entry(ch.id.clone()).or_insert_with(|| ChannelTotal {
+        id: ch.id.clone(),
+        name: ch.name.clone(),
+        message_count: 0,
+        vocal_hours: 0.0,
+    });
+    entry.name.clone_from(&ch.name);
+    entry
 }
 
 /// Migration snapshot: cumulative 2025 history, not a real activity day.
@@ -88,38 +103,42 @@ pub fn aggregate_with_mentions(
                 .ok_or("Message overflow")?;
             undated_vocal_hours += hours;
         }
-        for (channels, totals, is_voice) in [
-            (&stat.text_channels, &mut text, false),
-            (&stat.voice_channels, &mut voice, true),
-        ] {
-            if let Some(channels) = channels {
-                for ch in channels {
-                    let entry = totals.entry(ch.id.clone()).or_insert_with(|| ChannelTotal {
-                        id: ch.id.clone(),
-                        name: ch.name.clone(),
-                        message_count: 0,
-                        vocal_hours: 0.0,
-                    });
-                    entry.name.clone_from(&ch.name);
-                    if is_voice {
-                        match ch.vocal_time {
-                            Some(h) if h.is_finite() && h >= 0.0 => entry.vocal_hours += h,
-                            None => complete = false,
-                            _ => return Err("Invalid channel vocal time".into()),
-                        }
-                    } else {
-                        match ch.nb_message {
-                            Some(n) if n >= 0 => {
-                                entry.message_count = entry
-                                    .message_count
-                                    .checked_add(n)
-                                    .ok_or("Channel overflow")?
-                            }
-                            None => complete = false,
-                            _ => return Err("Invalid channel messages".into()),
-                        }
-                    }
+        for ch in stat.text_channels.iter().flatten() {
+            let entry = channel_entry(&mut text, ch);
+            match ch.nb_message {
+                Some(n) if n >= 0 => {
+                    entry.message_count = entry
+                        .message_count
+                        .checked_add(n)
+                        .ok_or("Channel overflow")?
                 }
+                None => complete = false,
+                _ => return Err("Invalid channel messages".into()),
+            }
+        }
+        // The bot's per-channel voice counters undercount sessions, while the row's own
+        // vocal_time is reliable: share it among the row's channels, all of it to a single
+        // channel, otherwise pro rata of their counters (equal shares without usable ones).
+        if let Some(channels) = stat.voice_channels.as_deref().filter(|c| !c.is_empty()) {
+            let mut weights = Vec::with_capacity(channels.len());
+            for ch in channels {
+                match ch.vocal_time {
+                    Some(h) if h.is_finite() && h >= 0.0 => weights.push(Some(h)),
+                    None => weights.push(None),
+                    _ => return Err("Invalid channel vocal time".into()),
+                }
+            }
+            let known: f64 = weights.iter().flatten().sum();
+            let pro_rata = weights.iter().all(Option::is_some) && known > 0.0;
+            if channels.len() > 1 && !pro_rata {
+                complete = false;
+            }
+            for (ch, weight) in channels.iter().zip(weights) {
+                let share = match weight {
+                    Some(weight) if pro_rata => weight / known,
+                    _ => 1.0 / channels.len() as f64,
+                };
+                channel_entry(&mut voice, ch).vocal_hours += hours * share;
             }
         }
     }
@@ -449,6 +468,48 @@ mod tests {
         assert_eq!(stats.favorite_text_channel.unwrap().id, "a");
         assert_eq!(stats.favorite_voice_channel.unwrap().id, "v");
     }
+    #[test]
+    fn row_vocal_time_is_shared_among_its_voice_channels() {
+        let voice = |channels: serde_json::Value, hours: f64| {
+            row("2026-10-21", 0, hours, serde_json::json!([]), channels)
+        };
+        // Hours of the favorite voice channel, when it is `id`.
+        let hours = |result: &DiscordActivity, id: &str| {
+            result
+                .favorite_voice_channel
+                .as_ref()
+                .filter(|c| c.id == id)
+                .map(|c| c.vocal_hours)
+        };
+        // A single channel receives the whole row, despite an undercounted counter.
+        let single = aggregate(&[voice(
+            serde_json::json!([{"id":"a","name":"A","vocal_time":0.01}]),
+            0.9,
+        )])
+        .unwrap();
+        assert_eq!(hours(&single, "a"), Some(0.9));
+        assert!(single.channel_counters_complete);
+        // Several channels share the row pro rata of their counters.
+        let shared = aggregate(&[voice(
+            serde_json::json!([{"id":"a","name":"A","vocal_time":0.3},{"id":"b","name":"B","vocal_time":0.1}]),
+            2.0,
+        )])
+        .unwrap();
+        assert!((hours(&shared, "a").unwrap() - 1.5).abs() < 1e-9);
+        assert!(shared.channel_counters_complete);
+        // Without usable counters, equal shares, flagged as incomplete.
+        let equal = aggregate(&[voice(
+            serde_json::json!([{"id":"a","name":"A"},{"id":"b","name":"B","vocal_time":0.0}]),
+            2.0,
+        )])
+        .unwrap();
+        assert_eq!(hours(&equal, "a"), Some(1.0));
+        assert!(!equal.channel_counters_complete);
+        // Rows without channels stay unattributed.
+        let none = aggregate(&[voice(serde_json::json!([]), 2.0)]).unwrap();
+        assert!(none.favorite_voice_channel.is_none());
+    }
+
     #[test]
     fn empty_legacy_invalid_and_overflow_are_explicit() {
         let empty = aggregate(&[]).unwrap();
