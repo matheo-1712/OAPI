@@ -10,12 +10,21 @@ OAPI utilise Discord OAuth2 pour authentifier les utilisateurs. Plutôt que de s
 2. **Route de Retour (`/api/auth/callback`)** : Une fois que Discord a autorisé l'utilisateur, il est redirigé ici avec un `code` temporaire. Le serveur l'échange contre un jeton d'accès, récupère le profil Discord et ses rôles, vérifie l'existence de l'utilisateur dans PocketBase, génère un JWT, crée le cookie `auth_token`, et redirige l'utilisateur vers son URL de retour incluse dans le state signé.
 3. **Route de Déconnexion (`/api/auth/logout`)** : Supprime le cookie `auth_token` et redirige l'utilisateur vers la page d'accueil ou l'URL de retour.
 
+### Connexion depuis le site (Astroloutre)
+Le site est sur un autre domaine que le portail : il utilise des routes dédiées, actives seulement si `site_auth.url` est renseigné (origine seule, ex. `https://antredesloutres.fr`, en HTTPS obligatoire en production).
+- **`/api/auth/site/login?return_to=/chemin`** : même flux Discord, mais le retour se fait sur `site_auth.url` + le chemin (toujours un chemin local, jamais une URL fournie par le client).
+- **`/api/auth/site/me`** : profil public de la session (`username`, `discord_id`, `discord_tag`, `avatar_url`, `role`). Réponse lisible par `site_auth.url` uniquement (CORS avec `credentials`), les autres origines restent bloquées par le navigateur.
+- **`/api/auth/site/logout?return_to=/chemin`** : supprime le cookie et renvoie vers le site.
+
+Le cookie reste celui d'OAPI (`SameSite=Lax`, sans `Domain`) : le site doit être sur le même site enregistrable (ex. `antredesloutres.fr` et `oapi.antredesloutres.fr`) pour que le navigateur l'envoie. En local, lancer OAPI et le site tous deux sur `localhost` (ports différents) ; la valeur par défaut est `http://localhost:4321`. Le callback Discord reste `/api/auth/callback` : aucune modification de l'application Discord n'est nécessaire.
+
 ## 2. JWT et Cookies
 Le JWT généré contient les informations (claims) suivantes :
 - `sub` : ID de l'utilisateur Discord
 - `username` : Nom d'utilisateur Discord
 - `role` : Le rôle le plus élevé attribué à l'utilisateur (`Admin`, `LoutreInvesti`, ou `Normal`).
 - `exp` : Date d'expiration (7 jours)
+- `profile` : `discord_tag` (PocketBase) et `avatar_url` (Discord) affichés par le site ; absent des jetons émis avant son ajout
 
 Le cookie de session est `HttpOnly`, `SameSite=Lax` et `Secure` en HTTPS ou en production, avec une durée de sept jours. Le frontend consulte `/api/auth/me` pour connaître la connexion. `JWT_SECRET` doit contenir au moins 32 octets hors espaces de bord ; une valeur absente ou trop courte bloque le démarrage.
 

@@ -21,6 +21,7 @@ fn service_claims(key: &str, expected: &str) -> Option<crate::models::JwtClaims>
         role: Role::Admin,
         exp: 0,
         iat: 0,
+        profile: None,
     })
 }
 
@@ -67,6 +68,30 @@ pub async fn private_response(request: Request, next: Next) -> Response {
         axum::http::header::X_CONTENT_TYPE_OPTIONS,
         axum::http::HeaderValue::from_static("nosniff"),
     );
+    response
+}
+
+/// Lets the configured website read the response with the browser's session cookie.
+/// Only exact `site_auth.url` origins are allowed; every other origin stays blocked by the browser.
+pub async fn site_cors(request: Request, next: Next) -> Response {
+    let allowed = crate::config::Config::global()
+        .site_origin()
+        .zip(request.headers().get(axum::http::header::ORIGIN))
+        .filter(|(site, origin)| origin.as_bytes() == site.as_bytes())
+        .map(|(_, origin)| origin.clone());
+    let mut response = next.run(request).await;
+    let headers = response.headers_mut();
+    headers.insert(
+        axum::http::header::VARY,
+        axum::http::HeaderValue::from_static("Origin"),
+    );
+    if let Some(origin) = allowed {
+        headers.insert(axum::http::header::ACCESS_CONTROL_ALLOW_ORIGIN, origin);
+        headers.insert(
+            axum::http::header::ACCESS_CONTROL_ALLOW_CREDENTIALS,
+            axum::http::HeaderValue::from_static("true"),
+        );
+    }
     response
 }
 

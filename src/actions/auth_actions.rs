@@ -1,5 +1,7 @@
 use crate::config::Config;
-use crate::models::{DiscordMemberResponse, DiscordOAuthUser, DiscordUser, JwtClaims, Role};
+use crate::models::{
+    DiscordMemberResponse, DiscordOAuthUser, DiscordUser, JwtClaims, Role, SessionProfile,
+};
 use crate::utils::constants::DISCORD_USERS_COLLECTION;
 use crate::utils::pocketbase::PocketbaseClient;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
@@ -21,10 +23,22 @@ pub struct AuthAction {
 struct OAuthState {
     nonce: String,
     return_to: String,
+    /// True when the login started from the website (Astroloutre) rather than the OAPI portal.
+    #[serde(default)]
+    site: bool,
     exp: usize,
 }
 
-fn decode_oauth_state(state: &str, secret: &str) -> Option<String> {
+/// Where the browser goes back to once Discord authentication is over.
+#[derive(Debug, PartialEq, Eq)]
+pub struct LoginTarget {
+    /// Relative path, on the OAPI portal or on the website.
+    pub return_to: String,
+    /// True when `return_to` belongs to the website configured in `site_auth.url`.
+    pub site: bool,
+}
+
+fn decode_oauth_state(state: &str, secret: &str) -> Option<LoginTarget> {
     if secret.trim().len() < 32 {
         return None;
     }
@@ -36,7 +50,19 @@ fn decode_oauth_state(state: &str, secret: &str) -> Option<String> {
         &validation,
     )
     .ok()
-    .map(|data| data.claims.return_to)
+    .map(|data| LoginTarget {
+        return_to: data.claims.return_to,
+        site: data.claims.site,
+    })
+}
+
+/// Builds the Discord CDN URL of an avatar, rejecting hashes that could alter the URL.
+fn discord_avatar_url(user_id: &str, hash: &str) -> Option<String> {
+    let valid = |value: &str| {
+        !value.is_empty() && value.chars().all(|c| c.is_ascii_alphanumeric() || c == '_')
+    };
+    (valid(user_id) && valid(hash) && hash.len() <= 64)
+        .then(|| format!("https://cdn.discordapp.com/avatars/{user_id}/{hash}.png"))
 }
 
 fn verify_with_secret(token: &str, secret: &str) -> Option<JwtClaims> {
@@ -72,12 +98,13 @@ impl AuthAction {
         }
     }
 
-    pub fn get_login_url(&self, return_to: String) -> Result<(String, String), String> {
+    pub fn get_login_url(&self, target: LoginTarget) -> Result<(String, String), String> {
         let config = Config::global();
         config.validate_security()?;
         let state = OAuthState {
             nonce: CsrfToken::new_random().secret().clone(),
-            return_to,
+            return_to: target.return_to,
+            site: target.site,
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let state = encode(
@@ -97,7 +124,7 @@ impl AuthAction {
         Ok((auth_url.to_string(), state))
     }
 
-    pub fn verify_oauth_state(state: &str) -> Option<String> {
+    pub fn verify_oauth_state(state: &str) -> Option<LoginTarget> {
         let config = Config::global();
         config.validate_security().ok()?;
         decode_oauth_state(state, &config.auth.jwt_secret)
@@ -210,12 +237,22 @@ impl AuthAction {
             .as_secs() as usize;
         let exp = iat + 3600 * 24 * 7; // 7 days
 
+        // Fresh Discord avatar first, PocketBase copy as a fallback
+        let avatar_url = user_info
+            .avatar
+            .as_deref()
+            .and_then(|hash| discord_avatar_url(&user_info.id, hash))
+            .or(pb_user.avatar_url);
         let claims = JwtClaims {
             sub: user_info.id,
             username: user_info.username,
             role,
             exp,
             iat,
+            profile: Some(SessionProfile {
+                discord_tag: pb_user.discord_tag,
+                avatar_url,
+            }),
         };
 
         let token = encode(
@@ -244,6 +281,7 @@ mod tests {
         let state = OAuthState {
             nonce: "random-nonce".into(),
             return_to: "/tools.html".into(),
+            site: false,
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let token = encode(
@@ -253,8 +291,11 @@ mod tests {
         )
         .unwrap();
         assert_eq!(
-            decode_oauth_state(&token, TEST_SECRET).as_deref(),
-            Some("/tools.html")
+            decode_oauth_state(&token, TEST_SECRET),
+            Some(LoginTarget {
+                return_to: "/tools.html".into(),
+                site: false
+            })
         );
         assert!(decode_oauth_state(&format!("{}tampered", token), TEST_SECRET).is_none());
         assert!(decode_oauth_state(&token, "another-test-secret-at-least-32-bytes").is_none());
@@ -267,6 +308,40 @@ mod tests {
         )
         .unwrap();
         assert!(decode_oauth_state(&token, TEST_SECRET).is_none());
+    }
+
+    #[test]
+    fn oauth_state_keeps_the_website_target() {
+        let state = OAuthState {
+            nonce: "random-nonce".into(),
+            return_to: "/classements/discord".into(),
+            site: true,
+            exp: (chrono::Utc::now().timestamp() + 600) as usize,
+        };
+        let token = encode(
+            &Header::default(),
+            &state,
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+        assert_eq!(
+            decode_oauth_state(&token, TEST_SECRET),
+            Some(LoginTarget {
+                return_to: "/classements/discord".into(),
+                site: true
+            })
+        );
+    }
+
+    #[test]
+    fn discord_avatar_url_rejects_unsafe_values() {
+        assert_eq!(
+            discord_avatar_url("123", "a_abc123").as_deref(),
+            Some("https://cdn.discordapp.com/avatars/123/a_abc123.png")
+        );
+        assert!(discord_avatar_url("123", "../evil").is_none());
+        assert!(discord_avatar_url("123", "").is_none());
+        assert!(discord_avatar_url("1/2", "abc").is_none());
     }
 
     #[test]
@@ -284,6 +359,7 @@ mod tests {
                 .duration_since(UNIX_EPOCH)
                 .unwrap()
                 .as_secs() as usize,
+            profile: None,
         };
 
         let token = encode(
@@ -317,6 +393,7 @@ mod tests {
                 .unwrap()
                 .as_secs()
                 - 7200) as usize,
+            profile: None,
         };
 
         let token = encode(

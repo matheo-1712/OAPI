@@ -22,6 +22,18 @@ pub struct JwtClaims {
     pub exp: usize,
     /// Issued at timestamp.
     pub iat: usize,
+    /// Public profile shown by the website; absent from tokens issued before it existed.
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub profile: Option<SessionProfile>,
+}
+
+/// Public Discord profile embedded in the session for the website header.
+#[derive(Debug, Serialize, Deserialize, Clone, PartialEq, Eq)]
+pub struct SessionProfile {
+    /// Discord tag stored in PocketBase, used to build website profile URLs.
+    pub discord_tag: String,
+    /// Discord avatar URL.
+    pub avatar_url: Option<String>,
 }
 
 /// Structure representing a user's Discord profile from OAuth2 API.

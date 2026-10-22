@@ -106,11 +106,19 @@ pub fn api_routes() -> Router {
         .route("/investor/stats", get(investor_handler::get_stats))
         .route_layer(axum::middleware::from_fn(middleware::require_investor));
 
+    // Website (Astroloutre) session, readable cross-origin by site_auth.url only
+    let site_auth_routes = Router::new()
+        .route("/auth/site/me", get(auth_handler::site_me))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
     Router::new()
         .route("/auth/login", get(auth_handler::login))
         .route("/auth/callback", get(auth_handler::callback))
         .route("/auth/me", get(auth_handler::me))
         .route("/auth/logout", get(auth_handler::logout))
+        .route("/auth/site/login", get(auth_handler::site_login))
+        .route("/auth/site/logout", get(auth_handler::site_logout))
+        .merge(site_auth_routes)
         .merge(protected_routes)
         .merge(discord_routes)
         .merge(discord_admin_routes)
@@ -212,6 +220,64 @@ mod tests {
                 .await
                 .unwrap();
             assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        }
+    }
+
+    #[tokio::test]
+    async fn site_session_is_readable_by_the_configured_website_only() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for (origin, allowed) in [(site.as_str(), true), ("https://evil.example", false)] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .uri("/auth/site/me")
+                        .header("origin", origin)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::OK);
+            let headers = response.headers();
+            assert_eq!(
+                headers
+                    .get("access-control-allow-origin")
+                    .map(|value| value.to_str().unwrap()),
+                allowed.then_some(origin)
+            );
+            assert_eq!(
+                headers.get("access-control-allow-credentials").is_some(),
+                allowed
+            );
+            assert_eq!(headers["vary"], "Origin");
+        }
+    }
+
+    #[tokio::test]
+    async fn site_logout_redirects_to_the_website_path() {
+        config::init();
+        let site = config::Config::global().site_origin().unwrap().to_string();
+        for (query, expected) in [
+            (
+                "/auth/site/logout?return_to=/profil",
+                format!("{site}/profil"),
+            ),
+            (
+                "/auth/site/logout?return_to=https://evil.example",
+                format!("{site}/"),
+            ),
+            ("/auth/site/logout", format!("{site}/")),
+        ] {
+            let response = api_routes()
+                .oneshot(Request::builder().uri(query).body(Body::empty()).unwrap())
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::SEE_OTHER);
+            assert_eq!(response.headers()["location"], expected.as_str());
         }
     }
 

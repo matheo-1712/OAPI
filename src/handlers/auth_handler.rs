@@ -1,10 +1,10 @@
-use crate::actions::AuthAction;
+use crate::actions::{AuthAction, LoginTarget};
 use crate::config::Config;
 use axum::{
     Json,
     extract::Query,
     http::StatusCode,
-    response::{IntoResponse, Redirect},
+    response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
 use serde::Deserialize;
@@ -64,20 +64,38 @@ fn auth_cookie(name: &'static str, value: String, seconds: i64) -> Cookie<'stati
         (status = 503, description = "Authentication configuration unavailable")
     )
 )]
-pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> impl IntoResponse {
-    let return_to = safe_return_to(query.return_to);
+pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> Response {
+    start_login(
+        jar,
+        LoginTarget {
+            return_to: safe_return_to(query.return_to),
+            site: false,
+        },
+    )
+}
 
-    // Redirect to home if already authenticated
+/// URL the browser is sent back to after login or logout.
+/// A website target falls back to the OAPI home page when no website is configured.
+fn redirect_url(target: &LoginTarget) -> String {
+    match Config::global().site_origin() {
+        Some(origin) if target.site => format!("{}{}", origin, target.return_to),
+        _ if target.site => "/".to_string(),
+        _ => target.return_to.clone(),
+    }
+}
+
+fn start_login(jar: CookieJar, target: LoginTarget) -> Response {
+    // Redirect straight back if already authenticated
     if jar
         .get("auth_token")
         .and_then(|cookie| AuthAction::verify_token(cookie.value()))
         .is_some()
     {
-        return (jar, Redirect::to(&return_to)).into_response();
+        return (jar, Redirect::to(&redirect_url(&target))).into_response();
     }
 
     let auth_action = AuthAction::new();
-    match auth_action.get_login_url(return_to) {
+    match auth_action.get_login_url(target) {
         Ok((url, state)) => (
             jar.add(auth_cookie("oauth_state", state, 600)),
             Redirect::to(&url),
@@ -114,7 +132,7 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
             .and_then(|_| AuthAction::verify_oauth_state(state))
     });
     let jar = jar.remove(auth_cookie("oauth_state", String::new(), 0));
-    let Some(return_to) = return_to else {
+    let Some(target) = return_to else {
         return (
             jar,
             (
@@ -124,7 +142,10 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
         )
             .into_response();
     };
-    let return_to = safe_return_to(Some(return_to));
+    let return_to = redirect_url(&LoginTarget {
+        return_to: safe_return_to(Some(target.return_to)),
+        site: target.site,
+    });
 
     // Check if the user cancelled the authorization or an error occurred
     if let Some(error) = query.error {
@@ -219,6 +240,85 @@ pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> imp
     let return_to = safe_return_to(query.return_to);
 
     (jar.remove(cookie), Redirect::to(&return_to))
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/site/login",
+    tag = "auth",
+    params(
+        ("return_to" = Option<String>, Query, description = "Optional website path (e.g. /classements/discord) to go back to after login")
+    ),
+    responses(
+        (status = 303, description = "Redirects to Discord OAuth2 login page, then back to the website"),
+        (status = 503, description = "Authentication configuration unavailable")
+    )
+)]
+pub async fn site_login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> Response {
+    if Config::global().site_origin().is_none() {
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Connexion depuis le site indisponible.",
+        )
+            .into_response();
+    }
+    start_login(
+        jar,
+        LoginTarget {
+            return_to: safe_return_to(query.return_to),
+            site: true,
+        },
+    )
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/site/me",
+    tag = "auth",
+    responses(
+        (status = 200, description = "Returns the current user's public Discord profile, readable by the configured website (CORS with credentials)")
+    )
+)]
+pub async fn site_me(jar: CookieJar) -> impl IntoResponse {
+    let Some(claims) = jar
+        .get("auth_token")
+        .and_then(|cookie| AuthAction::verify_token(cookie.value()))
+    else {
+        return Json(json!({ "authenticated": false }));
+    };
+    let profile = claims.profile.as_ref();
+    Json(json!({
+        "authenticated": true,
+        "username": claims.username,
+        "discord_id": claims.sub,
+        "discord_tag": profile.map(|p| p.discord_tag.as_str()),
+        "avatar_url": profile.and_then(|p| p.avatar_url.as_deref()),
+        "role": claims.role,
+    }))
+}
+
+#[utoipa::path(
+    get,
+    path = "/auth/site/logout",
+    tag = "auth",
+    params(
+        ("return_to" = Option<String>, Query, description = "Optional website path to go back to after logout")
+    ),
+    responses(
+        (status = 303, description = "Clears the auth_token cookie and redirects to the website")
+    )
+)]
+pub async fn site_logout(
+    jar: CookieJar,
+    Query(query): Query<AuthLogoutQuery>,
+) -> impl IntoResponse {
+    let cookie = auth_cookie("auth_token", String::new(), 0);
+    let target = LoginTarget {
+        return_to: safe_return_to(query.return_to),
+        site: true,
+    };
+
+    (jar.remove(cookie), Redirect::to(&redirect_url(&target)))
 }
 
 #[cfg(test)]
