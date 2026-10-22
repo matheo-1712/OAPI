@@ -1,6 +1,22 @@
 use serde::Serialize;
 use utoipa::ToSchema;
 
+#[derive(Clone, Serialize, ToSchema)]
+pub struct PlayerActivity {
+    /// PocketBase account ID, or the stored reference for a deleted account.
+    pub id: String,
+    pub discord_id: Option<String>,
+    pub username: Option<String>,
+    pub stats: DiscordActivity,
+}
+
+#[derive(Clone, Serialize, ToSchema)]
+pub struct GlobalDiscordActivity {
+    #[serde(flatten)]
+    pub totals: DiscordActivity,
+    pub players: Vec<PlayerActivity>,
+}
+
 #[derive(Clone, Serialize, ToSchema, Default)]
 pub struct ActivityDay {
     pub date: String,

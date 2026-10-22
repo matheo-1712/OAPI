@@ -3,7 +3,9 @@
 Routes sous le préfixe configuré (`/api` par défaut) :
 
 - `GET /discord/stats/me` : historique personnel, identité issue exclusivement du JWT `auth_token`. Tous les rôles connectés disposent du même accès personnel. Aucun identifiant de membre ne peut être fourni pour changer de cible.
-- `GET /admin/discord/stats` : agrégation de tous les enregistrements Discord, réservée au rôle `Admin`. `Normal` et `LoutreInvesti` n'y ont pas accès.
+- `GET /admin/discord/stats` : agrégation de tous les enregistrements Discord et statistiques complètes de chaque joueur, réservée au rôle `Admin`. `Normal` et `LoutreInvesti` n'y ont pas accès.
+
+La réponse globale conserve les champs cumulés à la racine et ajoute `players` : chaque entrée contient `id` (PocketBase), `discord_id`, `username` et `stats` (mêmes champs que la réponse personnelle, historique journalier compris). Les références PocketBase et Discord d'un même joueur sont regroupées. Les joueurs sans activité sont inclus avec des totaux nuls. Les références à des comptes supprimés restent incluses avec leur référence stockée dans `id` et une identité `null`. La liste est triée par `id` croissant et partage le cache global de 60 secondes.
 
 La réponse JSON contient `total_messages`, `total_vocal_hours`, `record_messages_day`, `record_vocal_day`, `favorite_text_channel`, `favorite_voice_channel`, `channel_counters_complete`, `daily` (dates triées) et `fetched_at` (UTC). Les durées sont des heures décimales. Les journées utilisent la date métier `date_stats` déjà enregistrée ; aucune conversion de fuseau n'est appliquée à ces agrégats journaliers. Le total global mesure des heures-utilisateurs en vocal, pas la durée d'occupation unique du serveur.
 

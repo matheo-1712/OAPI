@@ -1,4 +1,7 @@
-use crate::models::{JwtClaims, discord_activity::DiscordActivity};
+use crate::models::{
+    JwtClaims,
+    discord_activity::{DiscordActivity, GlobalDiscordActivity},
+};
 use axum::{Extension, Json, http::StatusCode};
 
 async fn respond(id: Option<&str>) -> Result<Json<DiscordActivity>, (StatusCode, String)> {
@@ -31,12 +34,30 @@ pub async fn personal(
 }
 
 #[utoipa::path(get, path = "/admin/discord/stats", tag = "Discord", responses(
-    (status = 200, body = DiscordActivity, description = "All-time global activity; Admin auth_token session required"),
+    (status = 200, body = GlobalDiscordActivity, description = "All-time global totals and complete statistics per player; Admin auth_token session required"),
     (status = 401, description = "Authentication required"),
     (status = 403, description = "Admin required"),
     (status = 429, description = "Route quota exceeded (10 requests per minute); Retry-After in seconds"),
     (status = 503, description = "Statistics unavailable")
 ))]
-pub async fn global() -> Result<Json<DiscordActivity>, (StatusCode, String)> {
-    respond(None).await
+pub async fn global() -> Result<Json<GlobalDiscordActivity>, (StatusCode, String)> {
+    tokio::time::timeout(
+        std::time::Duration::from_secs(15),
+        crate::actions::discord_activity::snapshot(None),
+    )
+    .await
+    .unwrap_or_else(|_| Err("Statistics timeout".into()))
+    .map(|snapshot| {
+        Json(GlobalDiscordActivity {
+            totals: snapshot.activity.clone(),
+            players: snapshot.players.clone(),
+        })
+    })
+    .map_err(|error| {
+        tracing::error!("Discord statistics unavailable: {error}");
+        (
+            StatusCode::SERVICE_UNAVAILABLE,
+            "Statistiques temporairement indisponibles.".into(),
+        )
+    })
 }

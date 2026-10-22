@@ -44,6 +44,8 @@ use utoipa_swagger_ui::SwaggerUi;
     components(schemas(
         models::investor::InvestorStats,
         models::discord_activity::DiscordActivity,
+        models::discord_activity::GlobalDiscordActivity,
+        models::discord_activity::PlayerActivity,
         models::discord_activity::ActivityDay,
         models::discord_activity::ChannelTotal,
         models::discord_activity::VoiceCompanion,
