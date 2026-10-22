@@ -550,6 +550,7 @@ mod tests {
                 role: Role::Normal,
                 exp: usize::MAX,
                 iat: 0,
+                profile: None,
             };
             assert_eq!(
                 can_refresh(&pb, "account", kind, &claims).await.unwrap(),
@@ -790,6 +791,7 @@ mod tests {
                 role: crate::models::Role::Normal,
                 exp: usize::MAX,
                 iat: 0,
+                profile: None,
             };
             assert_eq!(
                 crate::actions::image_access::authorized_with_client(&client, uuid, &claims)

@@ -22,6 +22,17 @@ pub struct Config {
     /// Discord Authentication settings.
     #[serde(default)]
     pub discord_auth: DiscordAuthConfig,
+    /// Website (Astroloutre) allowed to use the `/auth/site/*` routes.
+    #[serde(default)]
+    pub site_auth: SiteAuthConfig,
+}
+
+/// Website login settings (from YAML).
+#[derive(Debug, Deserialize, Serialize, Clone, Default)]
+pub struct SiteAuthConfig {
+    /// Website origin, without path (e.g. `https://antredesloutres.fr`).
+    /// Empty disables the website login routes.
+    pub url: String,
 }
 
 /// Discord Authentication Settings (from YAML)
@@ -148,7 +159,30 @@ impl Config {
         {
             return Err("Production requires an HTTPS DISCORD_REDIRECT_URL".into());
         }
+        if !self.site_auth.url.is_empty() && self.site_origin().is_none() {
+            return Err("site_auth.url must be an http(s) origin without path".into());
+        }
+        if self.server.env == "production"
+            && self
+                .site_origin()
+                .is_some_and(|origin| !origin.starts_with("https://"))
+        {
+            return Err("Production requires an HTTPS site_auth.url".into());
+        }
         Ok(())
+    }
+
+    /// Website origin allowed for cross-origin session reads and post-login redirects.
+    pub fn site_origin(&self) -> Option<&str> {
+        let origin = self.site_auth.url.trim().trim_end_matches('/');
+        let host = origin
+            .strip_prefix("https://")
+            .or_else(|| origin.strip_prefix("http://"))?;
+        let valid = !host.is_empty()
+            && host
+                .chars()
+                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+        valid.then_some(origin)
     }
 
     pub fn secure_cookies(&self) -> bool {
@@ -179,6 +213,8 @@ impl Config {
             server: ServerConfig,
             #[serde(default)]
             discord_auth: DiscordAuthConfig,
+            #[serde(default)]
+            site_auth: SiteAuthConfig,
         }
 
         let mut parts: YamlParts = yaml_config.try_deserialize()?;
@@ -215,6 +251,7 @@ impl Config {
             monitoring: parts.monitoring,
             server: parts.server,
             discord_auth: parts.discord_auth,
+            site_auth: parts.site_auth,
             auth: AuthConfig {
                 pb_email,
                 pb_password,
@@ -289,8 +326,16 @@ mod tests {
         config.auth.discord_redirect_url = "http://localhost/callback".into();
         assert!(config.validate_security().is_err());
         config.auth.discord_redirect_url = "https://example.com/api/auth/callback".into();
+        config.site_auth.url = String::new();
         assert!(config.validate_security().is_ok());
         assert!(config.secure_cookies());
+        config.site_auth.url = "http://antredesloutres.fr".into();
+        assert!(config.validate_security().is_err());
+        config.site_auth.url = "https://antredesloutres.fr/profil".into();
+        assert!(config.validate_security().is_err());
+        config.site_auth.url = "https://antredesloutres.fr/".into();
+        assert!(config.validate_security().is_ok());
+        assert_eq!(config.site_origin(), Some("https://antredesloutres.fr"));
     }
 
     #[test]

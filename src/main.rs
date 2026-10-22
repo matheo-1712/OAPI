@@ -24,6 +24,9 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::auth_handler::callback,
         handlers::auth_handler::me,
         handlers::auth_handler::logout,
+        handlers::auth_handler::site_login,
+        handlers::auth_handler::site_me,
+        handlers::auth_handler::site_logout,
         handlers::admin_handler::get_all_users,
         handlers::badge_handler::award,
         handlers::badge_handler::evaluate,
@@ -241,6 +244,7 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
             || path.starts_with("/discord/")
             || path.starts_with("/generated_images/")
             || path == "/auth/me"
+            || path == "/auth/site/me"
             || path == "/discord-summary/{id}"
             || path == "/discord-summary/me"
             || path == "/minecraft-summary/{uuid}"
@@ -289,6 +293,9 @@ mod openapi_tests {
             ("/auth/callback", "get"),
             ("/auth/me", "get"),
             ("/auth/logout", "get"),
+            ("/auth/site/login", "get"),
+            ("/auth/site/me", "get"),
+            ("/auth/site/logout", "get"),
             ("/admin/users", "get"),
             ("/investor/stats", "get"),
             ("/discord/stats/me", "get"),
@@ -315,7 +322,7 @@ mod openapi_tests {
             json["paths"][&personal_image_path]["post"]["security"][0],
             serde_json::json!({"session_cookie":[]})
         );
-        assert_eq!(json["paths"].as_object().unwrap().len(), 20);
+        assert_eq!(json["paths"].as_object().unwrap().len(), 23);
         for item in json["paths"].as_object().unwrap().values() {
             for operation in item.as_object().unwrap().values() {
                 assert!(operation["responses"]["429"].is_object());

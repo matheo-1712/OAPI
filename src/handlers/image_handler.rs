@@ -83,6 +83,7 @@ mod tests {
             role: Role::Normal,
             exp: usize::MAX,
             iat: 0,
+            profile: None,
         };
         let response = get_image(
             Path((
@@ -104,6 +105,7 @@ mod tests {
             role: Role::Admin,
             exp: usize::MAX,
             iat: 0,
+            profile: None,
         };
         for (kind, owner, file) in [
             ("discord_summary", "..", format!("{}.png", "a".repeat(64))),

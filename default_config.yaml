@@ -65,3 +65,7 @@ monitoring:
 discord_auth:
   guild_id: ""
   investor_role_id: "1113865928086655037"
+
+# Website using the /api/auth/site/* routes (origin only, no path)
+site_auth:
+  url: "http://localhost:4321"
