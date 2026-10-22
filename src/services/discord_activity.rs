@@ -1,12 +1,12 @@
 use crate::models::{DiscordStats, discord_activity::*};
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
     let mut days: BTreeMap<String, ActivityDay> = BTreeMap::new();
     let mut text: BTreeMap<String, ChannelTotal> = BTreeMap::new();
     let mut voice: BTreeMap<String, ChannelTotal> = BTreeMap::new();
     let mut complete = true;
-    let mut companions: BTreeMap<String, VoiceCompanion> = BTreeMap::new();
+    let mut companions: BTreeMap<String, (VoiceCompanion, BTreeSet<&str>)> = BTreeMap::new();
     let mut total_messages = 0i64;
     let mut total_vocal_hours = 0.0;
     let mut undated_records = 0u64;
@@ -36,18 +36,22 @@ pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
         if date == Some("2025-01-01") {
             continue;
         }
-        let mut seen = std::collections::BTreeSet::new();
-        for companion in stat.vocal_with.iter().flatten() {
-            let entry = companions
-                .entry(companion.id.clone())
-                .or_insert_with(|| VoiceCompanion {
-                    id: companion.id.clone(),
-                    username: companion.username.clone(),
-                    records_together: 0,
+        // A companion counts once per business day, however many rows that day holds.
+        // Undated rows cannot be attributed to a day and are ignored here.
+        if let Some(date) = date {
+            for companion in stat.vocal_with.iter().flatten() {
+                let (entry, dates) = companions.entry(companion.id.clone()).or_insert_with(|| {
+                    (
+                        VoiceCompanion {
+                            id: companion.id.clone(),
+                            username: companion.username.clone(),
+                            records_together: 0,
+                        },
+                        BTreeSet::new(),
+                    )
                 });
-            entry.username.clone_from(&companion.username);
-            if seen.insert(&companion.id) {
-                entry.records_together += 1;
+                entry.username.clone_from(&companion.username);
+                dates.insert(date);
             }
         }
         if let Some(date) = date {
@@ -153,15 +157,21 @@ pub fn aggregate(stats: &[DiscordStats]) -> Result<DiscordActivity, String> {
         },
     );
     let top_voice_companion = companions
-        .values()
-        .fold(None::<&VoiceCompanion>, |best, c| {
-            if best.is_none_or(|b| c.records_together > b.records_together) {
+        .into_values()
+        .map(|(mut companion, dates)| {
+            companion.records_together = dates.len() as u64;
+            companion
+        })
+        .fold(None::<VoiceCompanion>, |best, c| {
+            if best
+                .as_ref()
+                .is_none_or(|b| c.records_together > b.records_together)
+            {
                 Some(c)
             } else {
                 best
             }
-        })
-        .cloned();
+        });
     Ok(DiscordActivity {
         total_messages,
         total_vocal_hours,
@@ -204,6 +214,17 @@ mod tests {
                     {"id":"a","username":"Renamed","vocal_time":1.0}
                 ]),
             ),
+            // Several rows on the same day count as one day together.
+            make(
+                "2026-10-20",
+                serde_json::json!([{"id":"b","username":"Longer"}]),
+            ),
+            make(
+                "2026-10-20",
+                serde_json::json!([{"id":"b","username":"Longer"}]),
+            ),
+            // Undated rows cannot be attributed to a day.
+            make("", serde_json::json!([{"id":"b","username":"Longer"}])),
             make(
                 "2025-01-01",
                 serde_json::json!([
@@ -216,6 +237,25 @@ mod tests {
         assert_eq!(top.id, "a");
         assert_eq!(top.username, "Renamed");
         assert_eq!(top.records_together, 2);
+        let b_only = aggregate(&[
+            make(
+                "2026-10-20",
+                serde_json::json!([{"id":"b","username":"Longer"}]),
+            ),
+            make(
+                "2026-10-20",
+                serde_json::json!([{"id":"b","username":"Longer"}]),
+            ),
+            make("", serde_json::json!([{"id":"b","username":"Longer"}])),
+        ])
+        .unwrap();
+        assert_eq!(b_only.top_voice_companion.unwrap().records_together, 1);
+        let undated_only = aggregate(&[make(
+            "",
+            serde_json::json!([{"id":"b","username":"Longer"}]),
+        )])
+        .unwrap();
+        assert!(undated_only.top_voice_companion.is_none());
         let json = serde_json::to_value(&top).unwrap();
         assert_eq!(json.as_object().unwrap().len(), 3);
         let unknown = aggregate(&[make(

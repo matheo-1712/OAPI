@@ -40,7 +40,7 @@ La date métier `2025-01-01` est réservée au cumul importé de l'ancien systè
 
 ## Compagnon vocal
 
-`top_voice_companion` expose `{id, username, records_together}` pour la personne avec laquelle le membre est le plus régulièrement en vocal : celle qui apparaît dans le plus de lignes `vocal_with`, une seule fois par ligne. Il fonctionne avec le format existant `{id, username}`, sans demander de durée partagée.
+`top_voice_companion` expose `{id, username, records_together}` pour la personne avec laquelle le membre est le plus régulièrement en vocal : celle qui apparaît dans `vocal_with` le plus grand nombre de journées distinctes (`date_stats`). Plusieurs lignes d'une même journée comptent pour une seule journée, et les lignes sans date exploitable sont ignorées pour ce classement : `records_together` est donc un nombre de journées. Il fonctionne avec le format existant `{id, username}`, sans demander de durée partagée.
 
 Le classement regroupe par ID, ignore le cumul de migration `2025-01-01` et départage les égalités par ID croissant. Sans compagnon enregistré, `top_voice_companion` est `null`. Sur la route globale admin, le classement agrège les compagnons mentionnés par tous les comptes.
 

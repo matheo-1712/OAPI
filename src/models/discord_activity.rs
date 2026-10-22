@@ -37,7 +37,7 @@ pub struct ChannelTotal {
 pub struct VoiceCompanion {
     pub id: String,
     pub username: String,
-    /// Number of activity records mentioning this user, once per record.
+    /// Number of distinct dated days with a record mentioning this user.
     pub records_together: u64,
 }
 
@@ -55,7 +55,7 @@ pub struct DiscordActivity {
     pub record_vocal_day: Option<ActivityDay>,
     pub favorite_text_channel: Option<ChannelTotal>,
     pub favorite_voice_channel: Option<ChannelTotal>,
-    /// Most regularly present companion, ranked by records_together, excluding migration.
+    /// Most regularly present companion, ranked by distinct days together, excluding migration.
     pub top_voice_companion: Option<VoiceCompanion>,
     /// False when channel counters are missing; favorites use available counters only.
     pub channel_counters_complete: bool,
