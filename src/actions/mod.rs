@@ -12,3 +12,4 @@ pub use discord_actions::*;
 pub use minecraft_actions::*;
 pub use monitoring_actions::*;
 pub mod discord_activity;
+pub mod friends_actions;

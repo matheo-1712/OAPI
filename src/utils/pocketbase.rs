@@ -76,6 +76,56 @@ impl PocketbaseClient {
         response.json().await.map_err(|e| e.to_string())
     }
 
+    /// Partially updates a record using the API's authenticated PocketBase identity.
+    pub async fn update_record(
+        &self,
+        collection: &str,
+        id: &str,
+        body: &serde_json::Value,
+    ) -> Result<serde_json::Value, String> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or("Pocketbase client not authenticated")?;
+        let response = reqwest::Client::new()
+            .patch(format!(
+                "{}/api/collections/{}/records/{}",
+                self.base_url, collection, id
+            ))
+            .header("Authorization", token)
+            .timeout(std::time::Duration::from_secs(10))
+            .json(body)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("PocketBase update failed: {}", response.status()));
+        }
+        response.json().await.map_err(|e| e.to_string())
+    }
+
+    /// Deletes a record using the API's authenticated PocketBase identity.
+    pub async fn delete_record(&self, collection: &str, id: &str) -> Result<(), String> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or("Pocketbase client not authenticated")?;
+        let response = reqwest::Client::new()
+            .delete(format!(
+                "{}/api/collections/{}/records/{}",
+                self.base_url, collection, id
+            ))
+            .header("Authorization", token)
+            .timeout(std::time::Duration::from_secs(10))
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("PocketBase delete failed: {}", response.status()));
+        }
+        Ok(())
+    }
+
     /// Creates a new Pocketbase client using configuration.
     pub fn new() -> Self {
         let auth = &Config::global().auth;

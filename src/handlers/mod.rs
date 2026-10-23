@@ -3,6 +3,7 @@ pub mod auth_handler;
 pub mod badge_handler;
 pub mod discord_activity;
 pub mod discord_handler;
+pub mod friends_handler;
 pub mod image_handler;
 pub mod investor_handler;
 pub mod middleware;

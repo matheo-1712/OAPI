@@ -5,8 +5,8 @@
 
 use crate::config::Config;
 use crate::handlers::{
-    admin_handler, auth_handler, discord_handler, investor_handler, middleware, minecraft_handler,
-    monitoring_handler,
+    admin_handler, auth_handler, discord_handler, friends_handler, investor_handler, middleware,
+    minecraft_handler, monitoring_handler,
 };
 use axum::{
     Router,
@@ -51,6 +51,25 @@ pub fn api_routes() -> Router {
         .route(
             "/badges/me/refresh",
             post(crate::handlers::badge_handler::refresh_mine),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    // Friends: session cookie for `me` (website included), service token for explicit accounts.
+    // Mutations are bodiless POSTs so the website never needs a CORS preflight.
+    let friends_routes = Router::new()
+        .route("/friends/:account", get(friends_handler::list))
+        .route(
+            "/friends/:account/:user/request",
+            post(friends_handler::request),
+        )
+        .route(
+            "/friends/:account/:user/accept",
+            post(friends_handler::accept),
+        )
+        .route(
+            "/friends/:account/:user/remove",
+            post(friends_handler::remove),
         )
         .route_layer(axum::middleware::from_fn(middleware::require_auth))
         .route_layer(axum::middleware::from_fn(middleware::site_cors));
@@ -125,6 +144,7 @@ pub fn api_routes() -> Router {
         .route("/auth/site/logout", get(auth_handler::site_logout))
         .merge(site_auth_routes)
         .merge(site_protected_routes)
+        .merge(friends_routes)
         .merge(protected_routes)
         .merge(discord_routes)
         .merge(discord_admin_routes)
@@ -298,6 +318,57 @@ mod tests {
                 headers.get("access-control-allow-credentials").is_some(),
                 allowed
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn friends_require_authentication_and_reject_foreign_origins() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for (method, path) in [
+            ("GET", "/friends/me"),
+            ("GET", "/friends/account"),
+            ("POST", "/friends/me/user/request"),
+            ("POST", "/friends/me/user/accept"),
+            ("POST", "/friends/account/user/remove"),
+        ] {
+            for cookie in ["", "auth_token=forged"] {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("cookie", cookie)
+                            .header("origin", site.as_str())
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                assert_eq!(
+                    response.headers()["access-control-allow-origin"],
+                    site.as_str()
+                );
+            }
+            if method == "POST" {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("origin", "https://evil.example")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            }
         }
     }
 
