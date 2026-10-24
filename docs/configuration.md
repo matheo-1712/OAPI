@@ -36,7 +36,7 @@ Les informations sensibles ne sont **jamais** stockées dans les fichiers YAML. 
 
 ## Structure des Données
 
-La configuration est structurée en trois blocs principaux :
+La configuration est structurée en plusieurs blocs principaux :
 
 ### `server`
 Gère le serveur Axum et le routage interne.
@@ -52,3 +52,9 @@ Liste des services à surveiller.
 
 ### `auth` (Interne)
 Regroupe les accès PocketBase chargés via l'environnement.
+
+### `scheduler`
+Planifie les [tâches quotidiennes](./daily_tasks.md) (purge des comptes Discord, badges).
+- `enabled` : active la boucle quotidienne (`true` par défaut). Hors `production`, un avertissement est loggé au démarrage car la purge agit sur le PocketBase configuré.
+- `run_at` : heure d'exécution au format `HH:MM`, heure de Paris (`"04:00"` par défaut). Une valeur invalide bloque le démarrage.
+La purge exige un champ `delete_at` de type `date` (revérifié par OAPI) et ne supprime rien au-delà de 50 comptes par passage (voir [tâches quotidiennes](./daily_tasks.md)).

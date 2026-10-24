@@ -1,0 +1,84 @@
+# Tâches quotidiennes
+
+OAPI exécute chaque jour deux tâches de maintenance en arrière-plan, dans cet ordre :
+
+1. **purge** : suppression des comptes Discord dont la date de suppression est passée ;
+2. **badges** : recalcul des badges de tous les comptes Discord et Minecraft.
+
+Une tâche en échec n'empêche pas la suivante de s'exécuter.
+
+## Horaire et configuration
+
+Les tâches se lancent une fois par jour à l'heure `scheduler.run_at` (format `HH:MM`,
+heure de Paris, `04:00` par défaut). Le bloc `scheduler` se règle dans `config.yaml`
+(voir [configuration](./configuration.md)) :
+
+```yaml
+scheduler:
+  enabled: true
+  run_at: "04:00"
+```
+
+Avec `enabled: false`, aucune tâche n'est planifiée. Une valeur `run_at` invalide
+empêche le démarrage d'OAPI. Au démarrage et après chaque passage, le log indique la
+prochaine exécution : `Next daily tasks run at …`.
+
+Si le scheduler est activé alors que `server.env` n'est pas `production`, OAPI logge un
+avertissement au démarrage : la purge s'exécutera sur le PocketBase configuré. Mettre
+`scheduler.enabled: false` dans `config.yaml` pour la désactiver.
+
+## Purge des comptes Discord
+
+Sont purgés les `discord_users` dont `delete_at` est renseigné et déjà dépassé.
+`discord_users.delete_at` doit être un champ PocketBase de type `date`. OAPI revérifie la
+date avant de purger : un compte dont `delete_at` est futur, vide ou illisible n'est
+jamais supprimé (il est compté en échec et loggé par son ID).
+
+**Plafond.** Au-delà de 50 comptes à purger dans un même passage (`MAX_PURGE_PER_RUN`
+dans `purge_service.rs`), rien n'est purgé et la tâche logge une erreur
+(`N accounts due for deletion, above the limit of 50; nothing purged`). Si ce volume est
+légitime, relever la constante.
+Pour chaque compte (record `R`, identifiant Discord `S`), dans cet ordre :
+
+| Étape | Collection | Action |
+| --- | --- | --- |
+| 1 | `discord_user_stats` | supprimer les lignes `discord_user = R` ou `= S` |
+| 2 | `badges_earned` | supprimer les lignes `discord_user = R` ou `= S` |
+| 3 | `discord_friendships` | supprimer les lignes `user_a = R` ou `user_b = R`, tout statut |
+| 4 | `discord_identity_token` | supprimer les lignes `discord_user = R` |
+| 5 | `players` | ne pas supprimer : mettre `discord_user` à `""` pour les joueurs liés à `R` ou `S` |
+| 6 | `discord_users` | supprimer le record `R` |
+
+### Comptes Minecraft conservés
+
+Les comptes Minecraft ne sont jamais supprimés : seul le lien `players.discord_user`
+est vidé. Leurs statistiques (`players_stats`) et leurs badges (`badges_earned.player`)
+sont conservés.
+
+### Reprise en cas d'échec
+
+Une erreur sur une étape arrête le traitement de ce compte seul : le record
+`discord_users` n'est pas supprimé, et le compte est repris le lendemain. Les autres
+comptes continuent. Si la tâche entière échoue (liste illisible, connexion PocketBase
+impossible), le prochain passage a lieu le lendemain.
+
+Un arrêt d'OAPI pendant un passage laisse au plus un compte partiellement purgé (le
+record `discord_users` est supprimé en dernier) ; il est repris le lendemain.
+
+## Badges
+
+La tâche réévalue les badges de chaque compte Discord puis de chaque joueur Minecraft,
+avec les règles de [`badges.yaml`](./badges.md). Elle est silencieuse : aucune
+notification n'est envoyée. Un `badges.yaml` invalide fait échouer cette tâche
+(loggée) sans affecter la purge.
+
+## Absence de rattrapage
+
+Si OAPI est arrêté à l'heure prévue, le passage manqué n'est pas rattrapé au
+redémarrage : les tâches s'exécutent à la prochaine échéance. Une panique pendant un
+passage est loggée sans arrêter le serveur ni la boucle.
+
+## Logs
+
+Chaque tâche logge ses compteurs (traités, réussis, en échec) et les ID de records en
+échec. Aucune donnée personnelle n'est écrite dans les logs.

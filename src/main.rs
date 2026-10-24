@@ -172,6 +172,8 @@ async fn main() {
     tracing::info!("📖 Swagger UI available at http://{}/swagger-ui", addr);
     tracing::info!("🌐 Web interface available at http://{}", addr);
 
+    services::scheduler::spawn(&config.scheduler);
+
     let listener = tokio::net::TcpListener::bind(addr).await.unwrap();
     axum::serve(
         listener,

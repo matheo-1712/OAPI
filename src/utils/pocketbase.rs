@@ -51,7 +51,6 @@ pub struct PocketbaseClient {
 impl PocketbaseClient {
     /// Builds a client with a fixed token against an arbitrary base URL (tests only).
     #[cfg(test)]
-    #[allow(dead_code)]
     pub fn for_test(base_url: String, token: &str) -> Self {
         Self {
             base_url,
@@ -327,7 +326,8 @@ impl PocketbaseClient {
             .await
             .map_err(|e| transport_error(&format!("Failed to fetch {}", description), e))?;
 
-        let final_url = resp.url().to_string();
+        // Path only: the query string may carry filters with user identifiers.
+        let final_path = resp.url().path().to_string();
         let status = resp.status();
 
         let text = resp
@@ -338,7 +338,7 @@ impl PocketbaseClient {
         if !status.is_success() {
             error!(
                 "Pocketbase fetch failed for {} at {}: {} - {}",
-                description, final_url, status, text
+                description, final_path, status, text
             );
             return Err(format!(
                 "Pocketbase returned error {} for {}",
