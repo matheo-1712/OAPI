@@ -59,4 +59,7 @@ badges:
   - id: "8730w898fzs2gja" # Aventure sans fin
     kind: player
 
-# « Une loutre qui ne prend pas de douche » est volontairement exclu.
+  # Palworld : compte Steam avec une ligne palworld_stats liée.
+  - id: "n69u186idwe7c8j" # Bienvenue sur Palworld
+    kind: player
+    rule: { stat: palworld_joined, minimum: 1 }

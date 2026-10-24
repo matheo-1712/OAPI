@@ -34,6 +34,7 @@ pub const DISCORD_IDENTITY_TOKEN_COLLECTION: &str = "discord_identity_token";
 pub const MINECRAFT_PLAYERS_COLLECTION: &str = "players";
 pub const MINECRAFT_STATS_COLLECTION: &str = "players_stats";
 pub const MINECRAFT_SERVERS_COLLECTION: &str = "servers";
+pub const PALWORLD_STATS_COLLECTION: &str = "palworld_stats";
 
 // ──────────────────────────────────────────────
 //  Badges Collection

@@ -83,6 +83,7 @@ pub async fn refresh_mine(
             RecipientKind::DiscordUser,
             id,
             user["username"].as_str().unwrap_or("Discord").to_owned(),
+            "Discord",
         ));
     }
     let players = pb
@@ -94,13 +95,16 @@ pub async fn refresh_mine(
             .filter(|id| valid_id(id))
             .ok_or("Invalid stored player ID")?
             .to_owned();
+        let platform = if player["account_id"].as_str().is_some_and(is_steam_id) {
+            "Steam"
+        } else {
+            "Minecraft"
+        };
         accounts.push((
             RecipientKind::Player,
             id,
-            player["playername"]
-                .as_str()
-                .unwrap_or("Minecraft")
-                .to_owned(),
+            player["playername"].as_str().unwrap_or(platform).to_owned(),
+            platform,
         ));
     }
     let badges = pb.list_all_records::<Value>(BADGES_COLLECTION, "").await?;
@@ -109,7 +113,7 @@ pub async fn refresh_mine(
         accounts_checked: 0,
         failed_accounts: Vec::new(),
     };
-    for (kind, id, account) in accounts {
+    for (kind, id, account, platform) in accounts {
         match evaluate_recipient(pb, &id, kind).await {
             Ok(results) => {
                 response.accounts_checked += 1;
@@ -139,11 +143,7 @@ pub async fn refresh_mine(
                         id: result.badge,
                         name: badge["name"].as_str().unwrap_or("Badge").into(),
                         description: badge["description"].as_str().unwrap_or_default().into(),
-                        platform: match kind {
-                            RecipientKind::Player => "Minecraft",
-                            RecipientKind::DiscordUser => "Discord",
-                        }
-                        .into(),
+                        platform: platform.into(),
                         account: account.clone(),
                         image_url,
                     });
@@ -276,6 +276,11 @@ fn resolve_badge<'a>(
 
 pub fn valid_id(id: &str) -> bool {
     !id.is_empty() && id.len() <= 64 && id.bytes().all(|c| c.is_ascii_alphanumeric())
+}
+
+/// SteamID64 of an individual account.
+fn is_steam_id(id: &str) -> bool {
+    id.len() == 17 && id.starts_with("7656119") && id.bytes().all(|c| c.is_ascii_digit())
 }
 
 fn valid_account_id(id: &str) -> bool {
@@ -423,6 +428,7 @@ fn qualifies(rule: &Rule, stats: &[Value]) -> Result<bool, String> {
             | "vocal_time"
             | "voice_joined"
             | "membership"
+            | "palworld_joined"
     );
     let map = matches!(field, "mobs_killed" | "items_crafted" | "items_broken");
     if parts.next().is_some()
@@ -565,6 +571,15 @@ async fn evaluate_with_definitions(
             .as_str()
             .is_some_and(|date| !date.trim().is_empty());
         stats.push(json!({"membership": u8::from(joined)}));
+    } else if is_steam_id(uuid) {
+        // Palworld rows are linked to the player record once the Steam account is known.
+        let palworld = pb
+            .list_all_records::<Value>(
+                PALWORLD_STATS_COLLECTION,
+                &format!("player = '{player_id}'"),
+            )
+            .await?;
+        stats.push(json!({"palworld_joined": u8::from(!palworld.is_empty())}));
     }
     let badges = pb.list_all_records::<Value>(BADGES_COLLECTION, "").await?;
     // Validate every rule before beginning writes.
@@ -760,6 +775,20 @@ mod tests {
         assert!(valid_account_id("123456781234123412341234567890ab"));
         assert!(!valid_account_id("uuid' || id != '"));
         assert!(!valid_account_id(""));
+    }
+    #[test]
+    fn palworld_stats_unlock_the_palworld_badge() {
+        assert!(is_steam_id("76561199511837910"));
+        assert!(!is_steam_id("123456781234123412341234567890ab"));
+        assert!(!is_steam_id("7656119951183791"));
+        let rule = &catalogue()
+            .unwrap()
+            .into_iter()
+            .find(|d| d.id.as_deref() == Some("n69u186idwe7c8j"))
+            .and_then(|d| d.rule)
+            .unwrap();
+        assert!(qualifies(rule, &[json!({"palworld_joined": 1})]).unwrap());
+        assert!(!qualifies(rule, &[json!({"palworld_joined": 0})]).unwrap());
     }
     #[test]
     fn thresholds_aggregate_and_can_scope_servers_and_json_keys() {
