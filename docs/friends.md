@@ -26,7 +26,9 @@ Règles :
 - `me` : le compte Discord de la session (résolu via `discord_id` du JWT). `404` si aucun enregistrement `discord_users` ne correspond.
 - un **ID d'enregistrement PocketBase** `discord_users` (alphanumérique, 64 caractères max). Un utilisateur normal ne peut viser que son propre compte (`403` sinon). `Admin` et token de service peuvent viser n'importe quel compte.
 
-`{user}` est toujours l'**ID d'enregistrement PocketBase** `discord_users` de l'autre membre, jamais un `discord_id` Discord.
+Pour **`request`**, `{user}` désigne exclusivement le **tag / nom d’utilisateur Discord exact**, par exemple `rerebleue`. Les espaces de bord, le `@` initial et les majuscules sont normalisés. Le membre est recherché uniquement par son champ `discord_tag` dans `discord_users`, jamais par un ID PocketBase ou par son nom d’affichage.
+
+Pour **`accept` et `remove`**, `{user}` reste l’**ID d’enregistrement PocketBase** `discord_users` fourni dans les listes. Le `discord_id` numérique Discord n’est utilisé par aucune de ces routes comme identifiant du destinataire.
 
 ## 3. Modèle de données
 
@@ -75,7 +77,9 @@ Réponse `200` :
 
 ### `POST /friends/{account}/{user}/request`
 
-Envoie une demande d'ami. Pas de corps.
+Envoie une demande d'ami à un **tag Discord**, par exemple `POST /friends/me/rerebleue/request`. La route reste inchangée ; l’ajout par identifiant PocketBase est supprimé. Pas de corps.
+
+Le tag est composé de 2 à 32 lettres ASCII minuscules, chiffres, points ou underscores, sans deux points consécutifs. Le membre doit déjà exister dans OAPI. Un tag absent renvoie `404` ; plusieurs enregistrements portant le même tag donnent `409` sans envoyer de demande. Les contrôles d’auto-ajout et les règles des demandes réciproques s’appliquent au compte trouvé.
 
 | Situation | Résultat |
 |---|---|
@@ -83,8 +87,8 @@ Envoie une demande d'ami. Pas de corps.
 | `{user}` avait déjà envoyé une demande à `{account}` | `200`, la demande est **acceptée directement** (`status: accepted`) |
 | Demande déjà envoyée par `{account}` | `409` |
 | Déjà amis | `409` |
-| `{user}` = `{account}` | `400` |
-| `{user}` inexistant | `404` |
+| Le tag désigne le compte qui agit | `400` |
+| Tag inconnu dans OAPI | `404` |
 
 Réponse `200` : `{ "friendship_id": "…", "status": "pending" | "accepted" }`.
 
@@ -107,11 +111,11 @@ Réponse `204` sans contenu. `404` si aucune relation n'existe.
 
 | Code | Cause |
 |---|---|
-| `400` | ID invalide, auto-ajout, ou token de service utilisant `me` |
+| `400` | ID ou tag invalide, auto-ajout, ou token de service utilisant `me` |
 | `401` | Pas de session valide ni de token de service |
 | `403` | Compte appartenant à un autre utilisateur, ou requête `POST` cross-origin |
 | `404` | Compte, utilisateur, ou relation / demande introuvable |
-| `409` | Déjà amis, ou demande déjà envoyée |
+| `409` | Déjà amis, demande déjà envoyée, ou plusieurs comptes portant le même tag |
 | `429` | Quota dépassé : 10 requêtes par minute et par route, `Retry-After` en secondes |
 | `502` | PocketBase indisponible (détails dans les logs, jamais dans la réponse) |
 
@@ -130,8 +134,8 @@ Les réponses sont privées : `Cache-Control: no-store` et `X-Content-Type-Optio
 # Liste de mes amis (session)
 curl -b "auth_token=<jwt>" https://<host>/api/friends/me
 
-# Envoyer une demande
-curl -X POST -b "auth_token=<jwt>" https://<host>/api/friends/me/<id_autre>/request
+# Envoyer une demande par tag Discord
+curl -X POST -b "auth_token=<jwt>" https://<host>/api/friends/me/rerebleue/request
 
 # Le bot agit pour un compte précis
 curl -X POST -H "Authorization: Bearer $OAPI_SERVICE_API_KEY" \
@@ -141,7 +145,7 @@ curl -X POST -H "Authorization: Bearer $OAPI_SERVICE_API_KEY" \
 Depuis le site Astroloutre (navigateur) :
 
 ```js
-await fetch(`${OAPI}/api/friends/me/${userId}/request`, {
+await fetch(`${OAPI}/api/friends/me/${encodeURIComponent(discordTag)}/request`, {
   method: "POST",
   credentials: "include",
 });

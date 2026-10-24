@@ -58,12 +58,13 @@ pub async fn list(
 }
 
 #[utoipa::path(post, path = "/friends/{account}/{user}/request", tag = "Friends",
-    params(("account" = String, Path, description = "`me` (session only) or a PocketBase discord_users record ID"), ("user" = String, Path, description = "PocketBase discord_users record ID of the other member")),
-    responses((status = 200, body = FriendshipResponse, description = "Request sent, or accepted when the other member had already asked"), (status = 400, description = "Invalid ID"), (status = 401, description = "Authentication required"), (status = 403, description = "Account belongs to another user or cross-origin request"), (status = 404, description = "User not found"), (status = 409, description = "Already friends or request already sent"), (status = 502, description = "Friends unavailable")))]
+    params(("account" = String, Path, description = "`me` (session only) or a PocketBase discord_users record ID"), ("user" = String, Path, description = "Exact Discord username/tag (e.g. rerebleue), optionally prefixed with @; never a PocketBase ID")),
+    responses((status = 200, body = FriendshipResponse, description = "Request sent, or accepted when the other member had already asked"), (status = 400, description = "Invalid tag or self request"), (status = 401, description = "Authentication required"), (status = 403, description = "Account belongs to another user or cross-origin request"), (status = 404, description = "Discord tag not found"), (status = 409, description = "Already friends, request already sent, or ambiguous tag"), (status = 502, description = "Friends unavailable")))]
 pub async fn request(
     Path((account, user)): Path<(String, String)>,
     Extension(claims): Extension<JwtClaims>,
 ) -> Result<Json<FriendshipResponse>, (StatusCode, String)> {
+    let user = friends_actions::normalize_discord_tag(&user).map_err(failure)?;
     let (pb, account) = session(&account, &claims).await?;
     friends_actions::request(&pb, &account, &user)
         .await

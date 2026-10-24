@@ -174,8 +174,59 @@ async fn mark_accepted(
     })
 }
 
-/// Send a request; answering a pending request from the target accepts it instead.
+/// Normalize modern Discord usernames before using them in a PocketBase filter.
+pub fn normalize_discord_tag(value: &str) -> Result<String, FriendError> {
+    let value = value.trim();
+    let tag = value
+        .strip_prefix('@')
+        .unwrap_or(value)
+        .to_ascii_lowercase();
+    if !(2..=32).contains(&tag.len())
+        || tag.contains("..")
+        || !tag
+            .bytes()
+            .all(|c| c.is_ascii_lowercase() || c.is_ascii_digit() || c == b'.' || c == b'_')
+    {
+        return Err(FriendError::Invalid("Tag Discord invalide."));
+    }
+    Ok(tag)
+}
+
+/// The request route accepts Discord tags exclusively, never record IDs.
 pub async fn request(
+    pb: &PocketbaseClient,
+    account: &str,
+    discord_tag: &str,
+) -> Result<FriendshipResponse, FriendError> {
+    let tag = normalize_discord_tag(discord_tag)?;
+    let response: ListResponse<FriendUser> = pb
+        .list_records_with_params(
+            DISCORD_USERS_COLLECTION,
+            [
+                ("filter", format!("discord_tag = '{tag}'")),
+                ("page", "1".into()),
+                ("perPage", "2".into()),
+                ("fields", "id".into()),
+            ],
+        )
+        .await?;
+    if response.total_items > 1 || response.items.len() > 1 {
+        return Err(FriendError::Conflict(
+            "Plusieurs comptes correspondent à ce tag Discord.",
+        ));
+    }
+    let target = response
+        .items
+        .into_iter()
+        .next()
+        .ok_or(FriendError::NotFound(
+            "Aucun membre OAPI ne correspond à ce tag Discord.",
+        ))?;
+    request_to_user(pb, account, &target.id).await
+}
+
+/// Answering a pending request from the resolved target accepts it instead.
+async fn request_to_user(
     pb: &PocketbaseClient,
     account: &str,
     target: &str,
@@ -243,4 +294,183 @@ pub async fn remove(pb: &PocketbaseClient, account: &str, target: &str) -> Resul
     pb.delete_record(DISCORD_FRIENDSHIPS_COLLECTION, &existing.id)
         .await?;
     Ok(())
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use mockito::{Matcher, Server};
+
+    const USERS: &str = "/api/collections/discord_users/records";
+    const FRIENDSHIPS: &str = "/api/collections/discord_friendships/records";
+
+    fn page(items: serde_json::Value) -> String {
+        let count = items.as_array().unwrap().len();
+        json!({"page":1,"perPage":2,"totalPages":1,"totalItems":count,"items":items}).to_string()
+    }
+
+    #[test]
+    fn discord_tags_are_normalized_and_filter_injection_is_rejected() {
+        assert_eq!(
+            normalize_discord_tag(" @RereBleue ").ok().as_deref(),
+            Some("rerebleue")
+        );
+        assert_eq!(
+            normalize_discord_tag("loutre.bleue_1").ok().as_deref(),
+            Some("loutre.bleue_1")
+        );
+        for tag in [
+            "",
+            "@",
+            "a",
+            "a/b",
+            "hello world",
+            "a..b",
+            "rere' || true",
+            "étoile",
+        ] {
+            assert!(normalize_discord_tag(tag).is_err(), "{tag}");
+        }
+        assert!(normalize_discord_tag(&"a".repeat(33)).is_err());
+    }
+
+    #[tokio::test]
+    async fn request_looks_up_only_the_discord_tag_then_creates_the_relationship() {
+        let mut server = Server::new_async().await;
+        let target = server
+            .mock("GET", USERS)
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("filter".into(), "discord_tag = 'rerebleue'".into()),
+                Matcher::UrlEncoded("perPage".into(), "2".into()),
+            ]))
+            .with_status(200)
+            .with_body(page(json!([{"id":"target123","discord_tag":"rerebleue"}])))
+            .create_async()
+            .await;
+        let pair = server
+            .mock("GET", FRIENDSHIPS)
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "user_a = 'account123' && user_b = 'target123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(json!([])))
+            .create_async()
+            .await;
+        let exists = server
+            .mock("GET", USERS)
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "id = 'target123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(json!([{"id":"target123"}])))
+            .create_async()
+            .await;
+        let create = server.mock("POST", FRIENDSHIPS)
+            .match_body(Matcher::PartialJson(json!({"user_a":"account123","user_b":"target123","requested_by":"account123","status":"pending"})))
+            .with_status(200).with_body(json!({"id":"relation123"}).to_string()).create_async().await;
+        let pb = PocketbaseClient::for_test(server.url(), "test");
+        let result = request(&pb, "account123", " @RereBleue ")
+            .await
+            .ok()
+            .unwrap();
+        assert_eq!(result.friendship_id, "relation123");
+        assert_eq!(result.status, FriendshipStatus::Pending);
+        target.assert_async().await;
+        pair.assert_async().await;
+        exists.assert_async().await;
+        create.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn internal_record_ids_are_never_used_as_a_fallback_for_requests() {
+        let mut server = Server::new_async().await;
+        let lookup = server
+            .mock("GET", USERS)
+            .match_query(Matcher::UrlEncoded(
+                "filter".into(),
+                "discord_tag = 'record123'".into(),
+            ))
+            .with_status(200)
+            .with_body(page(json!([])))
+            .create_async()
+            .await;
+        let pb = PocketbaseClient::for_test(server.url(), "test");
+        assert!(matches!(
+            request(&pb, "account123", "record123").await,
+            Err(FriendError::NotFound(_))
+        ));
+        lookup.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn tag_requests_preserve_reciprocal_acceptance_and_duplicate_rejection() {
+        for (status, requester, accepted) in [
+            ("pending", "target123", true),
+            ("pending", "account123", false),
+            ("accepted", "target123", false),
+        ] {
+            let mut server = Server::new_async().await;
+            let lookup = server
+                .mock("GET", USERS)
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    "discord_tag = 'rerebleue'".into(),
+                ))
+                .with_status(200)
+                .with_body(page(json!([{"id":"target123"}])))
+                .create_async()
+                .await;
+            let pair = server.mock("GET", FRIENDSHIPS)
+                .match_query(Matcher::UrlEncoded("filter".into(), "user_a = 'account123' && user_b = 'target123'".into()))
+                .with_status(200).with_body(page(json!([{"id":"relation123","user_a":"account123","user_b":"target123","status":status,"requested_by":requester}]))).create_async().await;
+            let patch = server
+                .mock("PATCH", format!("{FRIENDSHIPS}/relation123").as_str())
+                .match_body(Matcher::PartialJson(json!({"status":"accepted"})))
+                .with_status(200)
+                .with_body("{}")
+                .expect(usize::from(accepted))
+                .create_async()
+                .await;
+            let pb = PocketbaseClient::for_test(server.url(), "test");
+            let result = request(&pb, "account123", "rerebleue").await;
+            if accepted {
+                assert_eq!(result.ok().unwrap().status, FriendshipStatus::Accepted);
+            } else {
+                assert!(matches!(result, Err(FriendError::Conflict(_))));
+            }
+            lookup.assert_async().await;
+            pair.assert_async().await;
+            patch.assert_async().await;
+        }
+    }
+
+    #[tokio::test]
+    async fn duplicate_tags_and_self_requests_are_rejected_without_creating_a_relationship() {
+        for (users, is_self) in [
+            (json!([{"id":"target1"},{"id":"target2"}]), false),
+            (json!([{"id":"account123"}]), true),
+        ] {
+            let mut server = Server::new_async().await;
+            let lookup = server
+                .mock("GET", USERS)
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    "discord_tag = 'rerebleue'".into(),
+                ))
+                .with_status(200)
+                .with_body(page(users))
+                .create_async()
+                .await;
+            let pb = PocketbaseClient::for_test(server.url(), "test");
+            let result = request(&pb, "account123", "rerebleue").await;
+            if is_self {
+                assert!(matches!(result, Err(FriendError::Invalid(_))));
+            } else {
+                assert!(matches!(result, Err(FriendError::Conflict(_))));
+            }
+            lookup.assert_async().await;
+        }
+    }
 }
