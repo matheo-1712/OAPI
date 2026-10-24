@@ -31,6 +31,17 @@ let stats: Vec<MinecraftStats> = pb.list_all_records("players_stats", &filter).a
 
 ---
 
+## Collection `discord_identity_token`
+
+Tokens de liaison ROM / Discord (voir [rom_auth.md](rom_auth.md)). Champs : `discord_user`, `label`, `linking_code`, `linking_code_expires_at`, `token` (hash SHA-256, **sans « Nonempty »**), `is_disabled`. Index uniques partiels requis :
+
+```sql
+CREATE UNIQUE INDEX idx_identity_token ON discord_identity_token (token) WHERE token != ''
+CREATE UNIQUE INDEX idx_identity_linking_code ON discord_identity_token (linking_code) WHERE linking_code != ''
+```
+
+---
+
 ## Sécurité
 - Le jeton d'authentification (`token`) est stocké localement dans l'instance du client.
 - Les erreurs de requête sont logguées via `tracing` avec le corps de la réponse brute pour faciliter le diagnostic (ex: erreurs de filtre 400).

@@ -18,6 +18,14 @@ Le site est sur un autre domaine que le portail : il utilise des routes dédiée
 
 Le cookie reste celui d'OAPI (`SameSite=Lax`, sans `Domain`) : le site doit être sur le même site enregistrable (ex. `antredesloutres.fr` et `oapi.antredesloutres.fr`) pour que le navigateur l'envoie. En local, lancer OAPI et le site tous deux sur `localhost` (ports différents) ; la valeur par défaut est `http://localhost:4321`. Le callback Discord reste `/api/auth/callback` : aucune modification de l'application Discord n'est nécessaire.
 
+### Sites supplémentaires (autre domaine)
+`site_auth.extra_urls` liste d'autres sites autorisés, par exemple `https://rom-patcher.ect-adl.fr` (origine seule, HTTPS obligatoire en production). Ils ont les mêmes droits que `site_auth.url` : routes `/auth/site/*`, lecture CORS avec `credentials` des réponses, appels `POST` acceptés par la vérification d'origine (donc les routes `/friends`, `/badges/me/refresh`, etc.).
+
+- Le site choisit sa cible avec `origin` : `/api/auth/site/login?origin=https://rom-patcher.ect-adl.fr&return_to=/chemin` et de même pour `/api/auth/site/logout`. Sans `origin`, la cible est `site_auth.url`. Une origine absente de la configuration renvoie `400`. L'origine est conservée dans l'état OAuth signé.
+- Comme `ect-adl.fr` n'est pas le même site enregistrable que l'API, le cookie `auth_token` émis pour une origine de `extra_urls` est `SameSite=None; Secure` (sinon le navigateur ne l'enverrait pas aux `fetch` du site). Il reste `HttpOnly`. En HTTP local, il reste `Lax` : ce mode ne fonctionne qu'en HTTPS.
+- Le cookie est unique par hôte d'API : se connecter depuis un site de `extra_urls` le rend `SameSite=None` pour tous les sites. Les mutations `POST` portant un `Origin` étranger restent refusées (`403`).
+- Côté site, tous les appels doivent utiliser `credentials: "include"`. Les navigateurs qui bloquent les cookies tiers (Safari, Firefox en mode strict) empêcheront la session de fonctionner ; dans ce cas, héberger l'API sous un sous-domaine du site (même site enregistrable) reste la solution fiable.
+
 ## 2. JWT et Cookies
 Le JWT généré contient les informations (claims) suivantes :
 - `sub` : ID de l'utilisateur Discord
@@ -40,6 +48,8 @@ Router::new()
     .route("/admin/users", get(get_all_users))
     .route_layer(axum::middleware::from_fn(middleware::require_admin))
 ```
+
+Un jeu (ROM) peut aussi s'authentifier avec un token `rom_…` obtenu en liant un code à 6 chiffres à un compte Discord. Ce token n'ouvre que la lecture de la liste d'amis (`GET /friends/{account}`, via `require_friends_reader`) ; voir [rom_auth.md](rom_auth.md).
 
 ## 4. Bouton d'Arrêt d'Urgence (Kill-Switch)
 Si vous soupçonnez que des cookies ou clés ont été compromis, vous pouvez déconnecter instantanément tous les utilisateurs actifs en modifiant la variable `JWT_SECRET` dans le fichier `.env` et en redémarrant le serveur. Les JWT étant sans état, modifier la clé de signature invalide immédiatement tous les jetons émis précédemment.

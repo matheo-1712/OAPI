@@ -5,8 +5,8 @@
 
 use crate::config::Config;
 use crate::handlers::{
-    admin_handler, auth_handler, discord_handler, investor_handler, middleware, minecraft_handler,
-    monitoring_handler,
+    admin_handler, auth_handler, discord_handler, friends_handler, investor_handler, middleware,
+    minecraft_handler, monitoring_handler, rom_auth_handler,
 };
 use axum::{
     Router,
@@ -51,6 +51,43 @@ pub fn api_routes() -> Router {
         .route(
             "/badges/me/refresh",
             post(crate::handlers::badge_handler::refresh_mine),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    // Friends: session cookie for `me` (website included), service token for explicit accounts.
+    // Mutations are bodiless POSTs so the website never needs a CORS preflight.
+    // ROM linking: website session creates codes and manages devices; the game exchanges its code unauthenticated.
+    let rom_site_routes = Router::new()
+        .route("/auth/rom/code", post(rom_auth_handler::create_code))
+        .route("/auth/rom/devices", get(rom_auth_handler::devices))
+        .route(
+            "/auth/rom/devices/:device/revoke",
+            post(rom_auth_handler::revoke),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    // The friend list is the only route a game ROM token may read.
+    let friends_read_routes = Router::new()
+        .route("/friends/:account", get(friends_handler::list))
+        .route_layer(axum::middleware::from_fn(
+            middleware::require_friends_reader,
+        ))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    let friends_routes = Router::new()
+        .route(
+            "/friends/:account/:user/request",
+            post(friends_handler::request),
+        )
+        .route(
+            "/friends/:account/:user/accept",
+            post(friends_handler::accept),
+        )
+        .route(
+            "/friends/:account/:user/remove",
+            post(friends_handler::remove),
         )
         .route_layer(axum::middleware::from_fn(middleware::require_auth))
         .route_layer(axum::middleware::from_fn(middleware::site_cors));
@@ -123,8 +160,12 @@ pub fn api_routes() -> Router {
         .route("/auth/logout", get(auth_handler::logout))
         .route("/auth/site/login", get(auth_handler::site_login))
         .route("/auth/site/logout", get(auth_handler::site_logout))
+        .route("/auth/rom/token", post(rom_auth_handler::exchange))
         .merge(site_auth_routes)
+        .merge(rom_site_routes)
         .merge(site_protected_routes)
+        .merge(friends_read_routes)
+        .merge(friends_routes)
         .merge(protected_routes)
         .merge(discord_routes)
         .merge(discord_admin_routes)
@@ -298,6 +339,181 @@ mod tests {
                 headers.get("access-control-allow-credentials").is_some(),
                 allowed
             );
+        }
+    }
+
+    #[tokio::test]
+    async fn friends_require_authentication_and_reject_foreign_origins() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for (method, path) in [
+            ("GET", "/friends/me"),
+            ("GET", "/friends/account"),
+            ("POST", "/friends/me/user/request"),
+            ("POST", "/friends/me/user/accept"),
+            ("POST", "/friends/account/user/remove"),
+        ] {
+            for cookie in ["", "auth_token=forged"] {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("cookie", cookie)
+                            .header("origin", site.as_str())
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                assert_eq!(
+                    response.headers()["access-control-allow-origin"],
+                    site.as_str()
+                );
+            }
+            if method == "POST" {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("origin", "https://evil.example")
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(response.status(), StatusCode::FORBIDDEN);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_site_routes_require_a_session() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for (method, path) in [
+            ("POST", "/auth/rom/code"),
+            ("GET", "/auth/rom/devices"),
+            ("POST", "/auth/rom/devices/abc/revoke"),
+        ] {
+            for cookie in ["", "auth_token=forged"] {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("cookie", cookie)
+                            .header("origin", site.as_str())
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "{method} {path}"
+                );
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                assert_eq!(
+                    response.headers()["access-control-allow-origin"],
+                    site.as_str()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_token_exchange_rejects_malformed_codes_without_auth() {
+        config::init();
+        let response = api_routes()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/rom/token")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"code":"12a456"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["cache-control"], "no-store");
+        for (content_type, body) in [("application/json", ""), ("text/plain", "nope")] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/auth/rom/token")
+                        .header("content-type", content_type)
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_client_error(), "{}", response.status());
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_tokens_only_open_the_friend_list() {
+        config::init();
+        let token = format!("Bearer rom_{}", "a".repeat(64));
+        for (method, path) in [
+            ("POST", "/badges/me/refresh"),
+            ("GET", "/discord/stats/me"),
+            ("POST", "/friends/me/user/request"),
+            ("POST", "/auth/rom/code"),
+            ("GET", "/auth/rom/devices"),
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header("authorization", &token)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {path}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_rom_tokens_are_rejected_before_pocketbase() {
+        config::init();
+        for value in [
+            "Bearer rom_abc".to_string(),
+            format!("Bearer rom_{}", "A".repeat(64)),
+            format!("Bearer rom_{}", "a".repeat(65)),
+            format!("Bearer rom_{} ", "a".repeat(64)),
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .uri("/friends/me")
+                        .header("authorization", value)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         }
     }
 

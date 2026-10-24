@@ -74,11 +74,16 @@ pub async fn private_response(request: Request, next: Next) -> Response {
 /// Lets the configured website read the response with the browser's session cookie.
 /// Only exact `site_auth.url` origins are allowed; every other origin stays blocked by the browser.
 pub async fn site_cors(request: Request, next: Next) -> Response {
-    let allowed = crate::config::Config::global()
-        .site_origin()
-        .zip(request.headers().get(axum::http::header::ORIGIN))
-        .filter(|(site, origin)| origin.as_bytes() == site.as_bytes())
-        .map(|(_, origin)| origin.clone());
+    let config = crate::config::Config::global();
+    let allowed = request
+        .headers()
+        .get(axum::http::header::ORIGIN)
+        .filter(|origin| {
+            origin
+                .to_str()
+                .is_ok_and(|origin| config.is_site_origin(origin))
+        })
+        .cloned();
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(
@@ -117,7 +122,7 @@ async fn verify_and_check_role(
             .unwrap_or_default();
         // OAPI's own pages, plus the configured website (site_auth.url) using its session cookie
         let origin = origin.to_str().ok();
-        let from_site = origin.is_some() && origin == config.site_origin();
+        let from_site = origin.is_some_and(|origin| config.is_site_origin(origin));
         if origin != Some(expected.as_str()) && !from_site {
             return Err((
                 StatusCode::FORBIDDEN,
@@ -180,6 +185,80 @@ pub async fn require_auth(
         &crate::config::Config::global().auth.service_api_key,
     )
     .await
+}
+
+/// Like `require_auth`, but the friend list also accepts a game ROM `rom_` token.
+/// Any other route keeps rejecting `rom_` tokens (they never match the service key).
+pub async fn require_friends_reader(
+    jar: CookieJar,
+    request: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, String)> {
+    friends_reader_with(
+        jar,
+        request,
+        next,
+        &crate::config::Config::global().auth.service_api_key,
+        |token| async move {
+            let mut pb = crate::utils::pocketbase::PocketbaseClient::new();
+            pb.login().await?;
+            crate::actions::rom_auth_actions::claims_for_token(&pb, &token).await
+        },
+    )
+    .await
+}
+
+/// `require_friends_reader` with an injectable "full `rom_` token -> claims" lookup.
+async fn friends_reader_with<F, Fut>(
+    jar: CookieJar,
+    mut request: Request,
+    next: Next,
+    service_key: &str,
+    resolve: F,
+) -> Result<Response, (StatusCode, String)>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<crate::models::JwtClaims>, String>>,
+{
+    let mut values = request
+        .headers()
+        .get_all(axum::http::header::AUTHORIZATION)
+        .iter();
+    let single = match (values.next(), values.next()) {
+        (Some(value), None) => Some(value),
+        _ => None,
+    };
+    let rom_like = single.is_some_and(|value| value.as_bytes().starts_with(b"Bearer rom_"));
+    if rom_like {
+        let token = single
+            .and_then(|value| value.to_str().ok())
+            .and_then(crate::actions::rom_auth_actions::parse_rom_bearer)
+            .map(str::to_owned);
+        let Some(token) = token else {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized. Please log in.".to_string(),
+            ));
+        };
+        return match resolve(token).await {
+            Ok(Some(claims)) => {
+                request.extensions_mut().insert(claims);
+                Ok(next.run(request).await)
+            }
+            Ok(None) => Err((
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized. Please log in.".to_string(),
+            )),
+            Err(error) => {
+                error!("ROM token verification failed: {}", error);
+                Err((
+                    StatusCode::BAD_GATEWAY,
+                    "Liaison ROM temporairement indisponible.".to_string(),
+                ))
+            }
+        };
+    }
+    verify_and_check_role(jar, request, next, &[], service_key).await
 }
 
 /// Middleware to require LoutreInvesti or Admin accreditation
@@ -275,6 +354,67 @@ mod activity_tests {
         }
     }
 
+    #[tokio::test]
+    async fn rom_tokens_resolve_to_normal_claims_or_fail_closed() {
+        use crate::models::JwtClaims;
+        let token = format!("rom_{}", "a".repeat(64));
+        let app = axum::Router::new()
+            .route(
+                "/friends/me",
+                axum::routing::get(
+                    |axum::Extension(claims): axum::Extension<JwtClaims>| async move {
+                        format!("{}:{:?}", claims.sub, claims.role)
+                    },
+                ),
+            )
+            .layer(axum::middleware::from_fn(
+                |jar: CookieJar, request: Request, next: Next| async move {
+                    let outcome = request.headers()["x-outcome"].to_str().unwrap().to_owned();
+                    friends_reader_with(jar, request, next, TEST_KEY, move |token| async move {
+                        assert_eq!(token, format!("rom_{}", "a".repeat(64)));
+                        match outcome.as_str() {
+                            "valid" => Ok(Some(JwtClaims {
+                                sub: "123".into(),
+                                username: "Loutre".into(),
+                                role: Role::Normal,
+                                exp: 0,
+                                iat: 0,
+                                profile: None,
+                            })),
+                            "unknown" => Ok(None),
+                            _ => Err("pocketbase down".into()),
+                        }
+                    })
+                    .await
+                },
+            ));
+        for (outcome, status) in [
+            ("valid", StatusCode::OK),
+            ("unknown", StatusCode::UNAUTHORIZED),
+            ("error", StatusCode::BAD_GATEWAY),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri("/friends/me")
+                        .header("authorization", format!("Bearer {token}"))
+                        .header("x-outcome", outcome)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status, "{outcome}");
+            if status == StatusCode::OK {
+                let body = axum::body::to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap();
+                assert_eq!(&body[..], b"123:Normal");
+            }
+        }
+    }
+
     #[test]
     fn service_credentials_are_opt_in_and_require_an_exact_key() {
         assert!(service_claims(TEST_KEY, "").is_none());
@@ -306,6 +446,7 @@ mod activity_tests {
 
     #[tokio::test]
     async fn service_can_access_explicit_accounts_without_a_discord_subject() {
+        crate::config::init();
         let claims = service_claims(TEST_KEY, TEST_KEY).unwrap();
         assert!(
             crate::actions::image_access::can_access_minecraft(

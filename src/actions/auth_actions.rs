@@ -26,6 +26,9 @@ struct OAuthState {
     /// True when the login started from the website (Astroloutre) rather than the OAPI portal.
     #[serde(default)]
     site: bool,
+    /// Website origin that started the login; absent means `site_auth.url`.
+    #[serde(default)]
+    origin: Option<String>,
     exp: usize,
 }
 
@@ -36,6 +39,8 @@ pub struct LoginTarget {
     pub return_to: String,
     /// True when `return_to` belongs to the website configured in `site_auth.url`.
     pub site: bool,
+    /// Configured website origin to go back to; `None` uses the primary `site_auth.url`.
+    pub origin: Option<String>,
 }
 
 fn decode_oauth_state(state: &str, secret: &str) -> Option<LoginTarget> {
@@ -53,6 +58,7 @@ fn decode_oauth_state(state: &str, secret: &str) -> Option<LoginTarget> {
     .map(|data| LoginTarget {
         return_to: data.claims.return_to,
         site: data.claims.site,
+        origin: data.claims.origin,
     })
 }
 
@@ -105,6 +111,7 @@ impl AuthAction {
             nonce: CsrfToken::new_random().secret().clone(),
             return_to: target.return_to,
             site: target.site,
+            origin: target.origin,
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let state = encode(
@@ -282,6 +289,7 @@ mod tests {
             nonce: "random-nonce".into(),
             return_to: "/tools.html".into(),
             site: false,
+            origin: None,
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let token = encode(
@@ -294,7 +302,8 @@ mod tests {
             decode_oauth_state(&token, TEST_SECRET),
             Some(LoginTarget {
                 return_to: "/tools.html".into(),
-                site: false
+                site: false,
+                origin: None
             })
         );
         assert!(decode_oauth_state(&format!("{}tampered", token), TEST_SECRET).is_none());
@@ -316,6 +325,7 @@ mod tests {
             nonce: "random-nonce".into(),
             return_to: "/classements/discord".into(),
             site: true,
+            origin: Some("https://rom-patcher.ect-adl.fr".into()),
             exp: (chrono::Utc::now().timestamp() + 600) as usize,
         };
         let token = encode(
@@ -328,7 +338,8 @@ mod tests {
             decode_oauth_state(&token, TEST_SECRET),
             Some(LoginTarget {
                 return_to: "/classements/discord".into(),
-                site: true
+                site: true,
+                origin: Some("https://rom-patcher.ect-adl.fr".into())
             })
         );
     }
