@@ -4,6 +4,7 @@
 //! 1. `default_config.yaml` (Base defaults)
 //! 2. `config.yaml` (Local overrides, ignored by Git)
 
+use chrono::NaiveTime;
 use config::{Config as ConfigTrait, ConfigError, File, FileFormat};
 use serde::{Deserialize, Serialize};
 use std::fs;
@@ -25,6 +26,35 @@ pub struct Config {
     /// Website (Astroloutre) allowed to use the `/auth/site/*` routes.
     #[serde(default)]
     pub site_auth: SiteAuthConfig,
+    /// Daily maintenance tasks schedule.
+    #[serde(default)]
+    pub scheduler: SchedulerConfig,
+}
+
+/// Daily maintenance schedule (from YAML).
+#[derive(Debug, Deserialize, Serialize, Clone)]
+pub struct SchedulerConfig {
+    /// Whether the daily tasks run at all.
+    pub enabled: bool,
+    /// Local Europe/Paris time of the daily run, formatted `HH:MM`.
+    pub run_at: String,
+}
+
+impl Default for SchedulerConfig {
+    fn default() -> Self {
+        Self {
+            enabled: true,
+            run_at: "04:00".into(),
+        }
+    }
+}
+
+impl SchedulerConfig {
+    /// Parses `run_at` (`HH:MM`).
+    pub fn run_time(&self) -> Result<NaiveTime, String> {
+        NaiveTime::parse_from_str(&self.run_at, "%H:%M")
+            .map_err(|_| format!("scheduler.run_at must be HH:MM, got {:?}", self.run_at))
+    }
 }
 
 /// Website login settings (from YAML).
@@ -195,6 +225,7 @@ impl Config {
         {
             return Err("Production requires HTTPS site_auth URLs".into());
         }
+        self.scheduler.run_time()?;
         Ok(())
     }
 
@@ -260,6 +291,8 @@ impl Config {
             discord_auth: DiscordAuthConfig,
             #[serde(default)]
             site_auth: SiteAuthConfig,
+            #[serde(default)]
+            scheduler: SchedulerConfig,
         }
 
         let mut parts: YamlParts = yaml_config.try_deserialize()?;
@@ -297,6 +330,7 @@ impl Config {
             server: parts.server,
             discord_auth: parts.discord_auth,
             site_auth: parts.site_auth,
+            scheduler: parts.scheduler,
             auth: AuthConfig {
                 pb_email,
                 pb_password,
@@ -358,6 +392,21 @@ pub fn init() {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn scheduler_defaults_and_rejects_invalid_time() {
+        let mut config = Config::load().unwrap();
+        config.auth.jwt_secret = "test-only-secret-at-least-32-bytes-long".into();
+        assert!(config.scheduler.enabled);
+        assert_eq!(
+            config.scheduler.run_time().unwrap(),
+            NaiveTime::from_hms_opt(4, 0, 0).unwrap()
+        );
+        for invalid in ["", "4h", "25:00", "04:60"] {
+            config.scheduler.run_at = invalid.into();
+            assert!(config.validate_security().is_err(), "{invalid}");
+        }
+    }
 
     #[test]
     fn security_configuration_fails_closed() {
