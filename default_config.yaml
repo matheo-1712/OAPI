@@ -59,6 +59,8 @@ monitoring:
   site:
     - name: "Astroloutre"
       url: "https://antredesloutres.fr"
+    - name: "ADL Rom Patcher"
+      url: "https://rom-patcher.antredesloutres.fr"
 
   http: []
 

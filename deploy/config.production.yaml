@@ -7,4 +7,4 @@ server:
 site_auth:
   url: "https://antredesloutres.fr"
   extra_urls:
-    - "https://rom-patcher.ect-adl.fr"
+    - "https://rom-patcher.antredesloutres.fr"
