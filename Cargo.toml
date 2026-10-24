@@ -17,6 +17,7 @@ rusttype = "0.9"
 reqwest = { version = "0.12", features = ["json"] }
 chrono = { version = "0.4", features = ["serde"] }
 sha2 = "0.10"
+rand = "0.8"
 dotenvy = "0.15"
 craftping = { version = "0.7.0", features = ["async-tokio"] }
 oauth2 = { version = "4.4.2", features = ["reqwest"] }

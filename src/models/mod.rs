@@ -13,3 +13,4 @@ pub use minecraft::*;
 pub use server::*;
 pub mod discord_activity;
 pub mod discord_friends;
+pub mod rom_auth;

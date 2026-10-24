@@ -49,6 +49,13 @@ pub struct PocketbaseClient {
 }
 
 impl PocketbaseClient {
+    /// Builds a client with a fixed token against an arbitrary base URL (tests only).
+    #[cfg(test)]
+    #[allow(dead_code)]
+    pub fn for_test(base_url: String, token: &str) -> Self {
+        Self { base_url, token: Some(token.to_string()) }
+    }
+
     /// Creates a record using the API's authenticated PocketBase identity.
     pub async fn create_record(
         &self,
