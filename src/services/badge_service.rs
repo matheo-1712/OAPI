@@ -823,7 +823,11 @@ mod tests {
                 None,
                 json!([{"id":"d1"}]),
             ),
-            list("/api/collections/players/records", None, json!([{"id":"p1"}])),
+            list(
+                "/api/collections/players/records",
+                None,
+                json!([{"id":"p1"}]),
+            ),
         ];
         let mut mocks = mocks;
         mocks.push(

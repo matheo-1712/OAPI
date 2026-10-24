@@ -73,8 +73,12 @@ async fn purge_account(
         .await?
     {
         let id = row["id"].as_str().ok_or("record without id")?;
-        pb.update_record(MINECRAFT_PLAYERS_COLLECTION, id, &json!({"discord_user": ""}))
-            .await?;
+        pb.update_record(
+            MINECRAFT_PLAYERS_COLLECTION,
+            id,
+            &json!({"discord_user": ""}),
+        )
+        .await?;
     }
     pb.delete_record(DISCORD_USERS_COLLECTION, record).await
 }
@@ -89,7 +93,10 @@ async fn purge_account(
 /// failures are reported in [`TaskSummary::failed`].
 pub async fn purge_deleted_accounts(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
     let accounts = pb
-        .list_all_records::<Value>(DISCORD_USERS_COLLECTION, "delete_at != '' && delete_at <= @now")
+        .list_all_records::<Value>(
+            DISCORD_USERS_COLLECTION,
+            "delete_at != '' && delete_at <= @now",
+        )
         .await?;
     if accounts.len() > MAX_PURGE_PER_RUN {
         return Err(format!(
@@ -149,7 +156,12 @@ mod tests {
             .await
     }
 
-    async fn delete_mock(server: &mut Server, path: &str, status: usize, n: usize) -> mockito::Mock {
+    async fn delete_mock(
+        server: &mut Server,
+        path: &str,
+        status: usize,
+        n: usize,
+    ) -> mockito::Mock {
         server
             .mock("DELETE", path)
             .with_status(status)
@@ -168,7 +180,10 @@ mod tests {
 
     #[test]
     fn account_filter_ignores_invalid_snowflake() {
-        assert_eq!(account_filter("discord_user", "rec1", None), "discord_user = 'rec1'");
+        assert_eq!(
+            account_filter("discord_user", "rec1", None),
+            "discord_user = 'rec1'"
+        );
     }
 
     #[tokio::test]
@@ -176,11 +191,29 @@ mod tests {
         let mut server = Server::new_async().await;
         let both = "discord_user = 'rec1' || discord_user = '123'";
         let mut mocks = vec![
-            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1","discord_id":"123","delete_at":PAST}])).await,
+            list_mock(
+                &mut server,
+                USERS,
+                DUE,
+                json!([{"id":"rec1","discord_id":"123","delete_at":PAST}]),
+            )
+            .await,
             list_mock(&mut server, STATS, both, json!([{"id":"s1"}])).await,
             list_mock(&mut server, BADGES, both, json!([{"id":"b1"}])).await,
-            list_mock(&mut server, FRIENDS, "user_a = 'rec1' || user_b = 'rec1'", json!([{"id":"f1"}])).await,
-            list_mock(&mut server, TOKENS, "discord_user = 'rec1'", json!([{"id":"t1"}])).await,
+            list_mock(
+                &mut server,
+                FRIENDS,
+                "user_a = 'rec1' || user_b = 'rec1'",
+                json!([{"id":"f1"}]),
+            )
+            .await,
+            list_mock(
+                &mut server,
+                TOKENS,
+                "discord_user = 'rec1'",
+                json!([{"id":"t1"}]),
+            )
+            .await,
             list_mock(&mut server, PLAYERS, both, json!([{"id":"p1"}])).await,
         ];
         for path in [
@@ -207,7 +240,11 @@ mod tests {
         let summary = purge_deleted_accounts(&pb).await.unwrap();
         assert_eq!(
             summary,
-            TaskSummary { processed: 1, succeeded: 1, failed: vec![] }
+            TaskSummary {
+                processed: 1,
+                succeeded: 1,
+                failed: vec![]
+            }
         );
         for m in mocks {
             m.assert_async().await;
@@ -218,7 +255,13 @@ mod tests {
     async fn failed_step_keeps_account_and_continues() {
         let mut server = Server::new_async().await;
         let mut mocks = vec![
-            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1","delete_at":PAST},{"id":"rec2","delete_at":PAST}])).await,
+            list_mock(
+                &mut server,
+                USERS,
+                DUE,
+                json!([{"id":"rec1","delete_at":PAST},{"id":"rec2","delete_at":PAST}]),
+            )
+            .await,
         ];
         for (rec, stat) in [("rec1", "s1"), ("rec2", "s2")] {
             let own = format!("discord_user = '{rec}'");
@@ -240,7 +283,11 @@ mod tests {
         let summary = purge_deleted_accounts(&pb).await.unwrap();
         assert_eq!(
             summary,
-            TaskSummary { processed: 2, succeeded: 1, failed: vec!["rec1".into()] }
+            TaskSummary {
+                processed: 2,
+                succeeded: 1,
+                failed: vec!["rec1".into()]
+            }
         );
         for m in mocks {
             m.assert_async().await;
@@ -250,7 +297,13 @@ mod tests {
     #[tokio::test]
     async fn invalid_record_id_is_failed_without_writes() {
         let mut server = Server::new_async().await;
-        let users = list_mock(&mut server, USERS, DUE, json!([{"id":"bad id","delete_at":PAST}])).await;
+        let users = list_mock(
+            &mut server,
+            USERS,
+            DUE,
+            json!([{"id":"bad id","delete_at":PAST}]),
+        )
+        .await;
         let other = server
             .mock("GET", Matcher::Regex("^/api/collections/(discord_user_stats|badges_earned|discord_friendships|discord_identity_token|players)/".into()))
             .expect(0)
@@ -265,7 +318,11 @@ mod tests {
         let summary = purge_deleted_accounts(&pb).await.unwrap();
         assert_eq!(
             summary,
-            TaskSummary { processed: 1, succeeded: 0, failed: vec!["bad id".into()] }
+            TaskSummary {
+                processed: 1,
+                succeeded: 0,
+                failed: vec!["bad id".into()]
+            }
         );
         users.assert_async().await;
         other.assert_async().await;
@@ -274,11 +331,24 @@ mod tests {
 
     #[test]
     fn deletion_due_accepts_both_formats_and_rejects_the_rest() {
-        let now = DateTime::parse_from_rfc3339("2026-10-24T12:00:00Z").unwrap().with_timezone(&Utc);
-        for due in ["2026-10-24 11:59:59.000Z", "2026-10-24 12:00:00.000Z", "2026-10-24T11:00:00Z", "2020-01-01 00:00:00Z"] {
+        let now = DateTime::parse_from_rfc3339("2026-10-24T12:00:00Z")
+            .unwrap()
+            .with_timezone(&Utc);
+        for due in [
+            "2026-10-24 11:59:59.000Z",
+            "2026-10-24 12:00:00.000Z",
+            "2026-10-24T11:00:00Z",
+            "2020-01-01 00:00:00Z",
+        ] {
             assert!(deletion_due(&json!(due), now), "{due}");
         }
-        for not_due in ["2026-10-24 12:15:00.000Z", "2026-10-24T12:15:00Z", "", "01/12/2020", "garbage"] {
+        for not_due in [
+            "2026-10-24 12:15:00.000Z",
+            "2026-10-24T12:15:00Z",
+            "",
+            "01/12/2020",
+            "garbage",
+        ] {
             assert!(!deletion_due(&json!(not_due), now), "{not_due}");
         }
         assert!(!deletion_due(&Value::Null, now));
@@ -288,7 +358,9 @@ mod tests {
     #[tokio::test]
     async fn future_or_unparseable_delete_at_is_never_purged() {
         let mut server = Server::new_async().await;
-        let future = (Utc::now() + chrono::Duration::days(365)).format("%Y-%m-%d %H:%M:%S%.3fZ").to_string();
+        let future = (Utc::now() + chrono::Duration::days(365))
+            .format("%Y-%m-%d %H:%M:%S%.3fZ")
+            .to_string();
         let users = list_mock(
             &mut server,
             USERS,
@@ -300,12 +372,20 @@ mod tests {
             ]),
         )
         .await;
-        let deletes = server.mock("DELETE", Matcher::Any).expect(0).create_async().await;
+        let deletes = server
+            .mock("DELETE", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
         let pb = PocketbaseClient::for_test(server.url(), "t");
         let summary = purge_deleted_accounts(&pb).await.unwrap();
         assert_eq!(
             summary,
-            TaskSummary { processed: 3, succeeded: 0, failed: vec!["rec1".into(), "rec2".into(), "rec3".into()] }
+            TaskSummary {
+                processed: 3,
+                succeeded: 0,
+                failed: vec!["rec1".into(), "rec2".into(), "rec3".into()]
+            }
         );
         users.assert_async().await;
         deletes.assert_async().await;
@@ -318,7 +398,11 @@ mod tests {
             .map(|i| json!({"id": format!("rec{i}"), "delete_at": PAST}))
             .collect();
         let users = list_mock(&mut server, USERS, DUE, Value::Array(items)).await;
-        let deletes = server.mock("DELETE", Matcher::Any).expect(0).create_async().await;
+        let deletes = server
+            .mock("DELETE", Matcher::Any)
+            .expect(0)
+            .create_async()
+            .await;
         let pb = PocketbaseClient::for_test(server.url(), "t");
         let error = purge_deleted_accounts(&pb).await.unwrap_err();
         assert!(error.contains("51"), "{error}");

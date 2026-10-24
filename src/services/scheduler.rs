@@ -138,24 +138,38 @@ mod tests {
     use chrono::{DateTime, NaiveTime, Utc};
 
     fn utc(value: &str) -> DateTime<Utc> {
-        DateTime::parse_from_rfc3339(value).unwrap().with_timezone(&Utc)
+        DateTime::parse_from_rfc3339(value)
+            .unwrap()
+            .with_timezone(&Utc)
     }
 
     #[test]
     fn next_run_is_today_or_tomorrow_in_paris_time() {
         let four = NaiveTime::from_hms_opt(4, 0, 0).unwrap();
         // Winter (UTC+1): 04:00 Paris = 03:00 UTC
-        assert_eq!(next_run(utc("2026-01-10T01:00:00Z"), four), utc("2026-01-10T03:00:00Z"));
-        assert_eq!(next_run(utc("2026-01-10T03:00:00Z"), four), utc("2026-01-11T03:00:00Z"));
+        assert_eq!(
+            next_run(utc("2026-01-10T01:00:00Z"), four),
+            utc("2026-01-10T03:00:00Z")
+        );
+        assert_eq!(
+            next_run(utc("2026-01-10T03:00:00Z"), four),
+            utc("2026-01-11T03:00:00Z")
+        );
         // Summer (UTC+2): 04:00 Paris = 02:00 UTC
-        assert_eq!(next_run(utc("2026-07-10T01:00:00Z"), four), utc("2026-07-10T02:00:00Z"));
+        assert_eq!(
+            next_run(utc("2026-07-10T01:00:00Z"), four),
+            utc("2026-07-10T02:00:00Z")
+        );
     }
 
     #[test]
     fn next_run_skips_dst_gap() {
         // 29 March 2026: 02:00 -> 03:00 in Paris; 02:30 does not exist
         let t = NaiveTime::from_hms_opt(2, 30, 0).unwrap();
-        assert_eq!(next_run(utc("2026-03-29T00:00:00Z"), t), utc("2026-03-29T01:30:00Z"));
+        assert_eq!(
+            next_run(utc("2026-03-29T00:00:00Z"), t),
+            utc("2026-03-29T01:30:00Z")
+        );
     }
 
     #[test]
@@ -174,7 +188,13 @@ mod tests {
             Box::pin(async { Err("boom".into()) })
         }
         fn ok(_: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
-            Box::pin(async { Ok(TaskSummary { processed: 1, succeeded: 1, failed: vec![] }) })
+            Box::pin(async {
+                Ok(TaskSummary {
+                    processed: 1,
+                    succeeded: 1,
+                    failed: vec![],
+                })
+            })
         }
         let results = run_tasks(&pb, &[("purge", fail), ("badges", ok)]).await;
         assert_eq!(results.len(), 2);
