@@ -33,6 +33,10 @@ pub struct SiteAuthConfig {
     /// Website origin, without path (e.g. `https://antredesloutres.fr`).
     /// Empty disables the website login routes.
     pub url: String,
+    /// Additional websites on another registrable domain (e.g. `https://rom-patcher.ect-adl.fr`).
+    /// Their login cookie is issued with `SameSite=None`, since the browser sends it cross-site.
+    #[serde(default)]
+    pub extra_urls: Vec<String>,
 }
 
 /// Discord Authentication Settings (from YAML)
@@ -142,6 +146,19 @@ pub struct InternalRoutes {
 
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
 
+/// An http(s) origin without path, with any trailing slash removed.
+fn parse_origin(url: &str) -> Option<&str> {
+    let origin = url.trim().trim_end_matches('/');
+    let host = origin
+        .strip_prefix("https://")
+        .or_else(|| origin.strip_prefix("http://"))?;
+    let valid = !host.is_empty()
+        && host
+            .chars()
+            .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
+    valid.then_some(origin)
+}
+
 impl Config {
     pub fn validate_security(&self) -> Result<(), String> {
         if !self.auth.service_api_key.is_empty()
@@ -162,27 +179,55 @@ impl Config {
         if !self.site_auth.url.is_empty() && self.site_origin().is_none() {
             return Err("site_auth.url must be an http(s) origin without path".into());
         }
+        if self
+            .site_auth
+            .extra_urls
+            .iter()
+            .any(|url| parse_origin(url).is_none())
+        {
+            return Err("site_auth.extra_urls must be http(s) origins without path".into());
+        }
         if self.server.env == "production"
             && self
-                .site_origin()
-                .is_some_and(|origin| !origin.starts_with("https://"))
+                .site_origins()
+                .iter()
+                .any(|origin| !origin.starts_with("https://"))
         {
-            return Err("Production requires an HTTPS site_auth.url".into());
+            return Err("Production requires HTTPS site_auth URLs".into());
         }
         Ok(())
     }
 
     /// Website origin allowed for cross-origin session reads and post-login redirects.
     pub fn site_origin(&self) -> Option<&str> {
-        let origin = self.site_auth.url.trim().trim_end_matches('/');
-        let host = origin
-            .strip_prefix("https://")
-            .or_else(|| origin.strip_prefix("http://"))?;
-        let valid = !host.is_empty()
-            && host
-                .chars()
-                .all(|c| c.is_ascii_alphanumeric() || matches!(c, '.' | '-' | ':'));
-        valid.then_some(origin)
+        parse_origin(&self.site_auth.url)
+    }
+
+    /// Every website allowed to use the `/auth/site/*` routes, `site_auth.url` first.
+    pub fn site_origins(&self) -> Vec<&str> {
+        self.site_origin()
+            .into_iter()
+            .chain(
+                self.site_auth
+                    .extra_urls
+                    .iter()
+                    .filter_map(|url| parse_origin(url)),
+            )
+            .collect()
+    }
+
+    /// True for an exact configured website origin.
+    pub fn is_site_origin(&self, origin: &str) -> bool {
+        self.site_origins().contains(&origin)
+    }
+
+    /// Websites listed in `extra_urls` receive a cross-site session cookie.
+    pub fn is_cross_site_origin(&self, origin: &str) -> bool {
+        self.site_auth
+            .extra_urls
+            .iter()
+            .filter_map(|url| parse_origin(url))
+            .any(|extra| extra == origin)
     }
 
     pub fn secure_cookies(&self) -> bool {
@@ -336,6 +381,28 @@ mod tests {
         config.site_auth.url = "https://antredesloutres.fr/".into();
         assert!(config.validate_security().is_ok());
         assert_eq!(config.site_origin(), Some("https://antredesloutres.fr"));
+
+        config.site_auth.extra_urls = vec!["https://rom-patcher.ect-adl.fr/".into()];
+        assert!(config.validate_security().is_ok());
+        assert_eq!(
+            config.site_origins(),
+            [
+                "https://antredesloutres.fr",
+                "https://rom-patcher.ect-adl.fr"
+            ]
+        );
+        assert!(config.is_site_origin("https://rom-patcher.ect-adl.fr"));
+        assert!(!config.is_site_origin("https://rom-patcher.ect-adl.fr.evil.example"));
+        assert!(config.is_cross_site_origin("https://rom-patcher.ect-adl.fr"));
+        assert!(!config.is_cross_site_origin("https://antredesloutres.fr"));
+        for invalid in [
+            "http://rom-patcher.ect-adl.fr",
+            "https://rom-patcher.ect-adl.fr/x",
+            "rom-patcher.ect-adl.fr",
+        ] {
+            config.site_auth.extra_urls = vec![invalid.into()];
+            assert!(config.validate_security().is_err(), "{invalid}");
+        }
     }
 
     #[test]

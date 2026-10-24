@@ -69,3 +69,5 @@ discord_auth:
 # Website using the /api/auth/site/* routes (origin only, no path)
 site_auth:
   url: "http://localhost:4321"
+  # Other websites on another domain; their session cookie is SameSite=None (HTTPS only)
+  extra_urls: []

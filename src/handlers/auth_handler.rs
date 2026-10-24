@@ -14,6 +14,8 @@ use time::Duration;
 #[derive(Deserialize)]
 pub struct AuthLoginQuery {
     pub return_to: Option<String>,
+    /// Website origin to go back to (`site_auth.url` or one of `site_auth.extra_urls`).
+    pub origin: Option<String>,
 }
 
 #[derive(Deserialize)]
@@ -26,6 +28,7 @@ pub struct AuthCallbackQuery {
 #[derive(Deserialize)]
 pub struct AuthLogoutQuery {
     pub return_to: Option<String>,
+    pub origin: Option<String>,
 }
 
 /// Ensures the return_to URL is a safe, relative path to prevent Open Redirect vulnerabilities.
@@ -52,6 +55,39 @@ fn auth_cookie(name: &'static str, value: String, seconds: i64) -> Cookie<'stati
         .build()
 }
 
+/// Session cookie; `cross_site` sends it with requests from other registrable domains (needs HTTPS).
+fn session_cookie(value: String, cross_site: bool) -> Cookie<'static> {
+    let mut cookie = auth_cookie("auth_token", value, 3600 * 24 * 7);
+    if cross_site && Config::global().secure_cookies() {
+        cookie.set_same_site(SameSite::None);
+    }
+    cookie
+}
+
+/// Target of a website login; `None` when `origin` is not a configured website.
+fn site_target(return_to: Option<String>, origin: Option<String>) -> Option<LoginTarget> {
+    let config = Config::global();
+    if origin
+        .as_deref()
+        .is_some_and(|origin| !config.is_site_origin(origin))
+    {
+        return None;
+    }
+    Some(LoginTarget {
+        return_to: safe_return_to(return_to),
+        site: true,
+        origin,
+    })
+}
+
+fn cross_site(target: &LoginTarget) -> bool {
+    target.site
+        && target
+            .origin
+            .as_deref()
+            .is_some_and(|origin| Config::global().is_cross_site_origin(origin))
+}
+
 #[utoipa::path(
     get,
     path = "/auth/login",
@@ -70,6 +106,7 @@ pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> Respo
         LoginTarget {
             return_to: safe_return_to(query.return_to),
             site: false,
+            origin: None,
         },
     )
 }
@@ -77,7 +114,13 @@ pub async fn login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> Respo
 /// URL the browser is sent back to after login or logout.
 /// A website target falls back to the OAPI home page when no website is configured.
 fn redirect_url(target: &LoginTarget) -> String {
-    match Config::global().site_origin() {
+    let config = Config::global();
+    let origin = target
+        .origin
+        .as_deref()
+        .filter(|origin| config.is_site_origin(origin))
+        .or_else(|| config.site_origins().first().copied());
+    match origin {
         Some(origin) if target.site => format!("{}{}", origin, target.return_to),
         _ if target.site => "/".to_string(),
         _ => target.return_to.clone(),
@@ -86,11 +129,17 @@ fn redirect_url(target: &LoginTarget) -> String {
 
 fn start_login(jar: CookieJar, target: LoginTarget) -> Response {
     // Redirect straight back if already authenticated
-    if jar
+    if let Some(token) = jar
         .get("auth_token")
-        .and_then(|cookie| AuthAction::verify_token(cookie.value()))
-        .is_some()
+        .filter(|cookie| AuthAction::verify_token(cookie.value()).is_some())
+        .map(|cookie| cookie.value().to_owned())
     {
+        // A session opened from another website may carry a Lax cookie that cross-site pages never receive.
+        let jar = if cross_site(&target) {
+            jar.add(session_cookie(token, true))
+        } else {
+            jar
+        };
         return (jar, Redirect::to(&redirect_url(&target))).into_response();
     }
 
@@ -142,10 +191,11 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
         )
             .into_response();
     };
-    let return_to = redirect_url(&LoginTarget {
+    let target = LoginTarget {
         return_to: safe_return_to(Some(target.return_to)),
-        site: target.site,
-    });
+        ..target
+    };
+    let return_to = redirect_url(&target);
 
     // Check if the user cancelled the authorization or an error occurred
     if let Some(error) = query.error {
@@ -173,7 +223,7 @@ pub async fn callback(jar: CookieJar, Query(query): Query<AuthCallbackQuery>) ->
     .unwrap_or_else(|_| Err("Discord authentication timed out".into()));
     match result {
         Ok(token) => {
-            let cookie = auth_cookie("auth_token", token, 3600 * 24 * 7);
+            let cookie = session_cookie(token, cross_site(&target));
 
             // Redirect to return_to
             let redirect_url = if return_to == "/" {
@@ -247,7 +297,8 @@ pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> imp
     path = "/auth/site/login",
     tag = "auth",
     params(
-        ("return_to" = Option<String>, Query, description = "Optional website path (e.g. /classements/discord) to go back to after login")
+        ("return_to" = Option<String>, Query, description = "Optional website path (e.g. /classements/discord) to go back to after login"),
+        ("origin" = Option<String>, Query, description = "Optional website origin (site_auth.url or site_auth.extra_urls); defaults to site_auth.url")
     ),
     responses(
         (status = 303, description = "Redirects to Discord OAuth2 login page, then back to the website"),
@@ -255,20 +306,17 @@ pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> imp
     )
 )]
 pub async fn site_login(jar: CookieJar, Query(query): Query<AuthLoginQuery>) -> Response {
-    if Config::global().site_origin().is_none() {
+    if Config::global().site_origins().is_empty() {
         return (
             StatusCode::SERVICE_UNAVAILABLE,
             "Connexion depuis le site indisponible.",
         )
             .into_response();
     }
-    start_login(
-        jar,
-        LoginTarget {
-            return_to: safe_return_to(query.return_to),
-            site: true,
-        },
-    )
+    match site_target(query.return_to, query.origin) {
+        Some(target) => start_login(jar, target),
+        None => (StatusCode::BAD_REQUEST, "Site inconnu.").into_response(),
+    }
 }
 
 #[utoipa::path(
@@ -302,7 +350,8 @@ pub async fn site_me(jar: CookieJar) -> impl IntoResponse {
     path = "/auth/site/logout",
     tag = "auth",
     params(
-        ("return_to" = Option<String>, Query, description = "Optional website path to go back to after logout")
+        ("return_to" = Option<String>, Query, description = "Optional website path to go back to after logout"),
+        ("origin" = Option<String>, Query, description = "Optional website origin (site_auth.url or site_auth.extra_urls); defaults to site_auth.url")
     ),
     responses(
         (status = 303, description = "Clears the auth_token cookie and redirects to the website")
@@ -313,12 +362,11 @@ pub async fn site_logout(
     Query(query): Query<AuthLogoutQuery>,
 ) -> impl IntoResponse {
     let cookie = auth_cookie("auth_token", String::new(), 0);
-    let target = LoginTarget {
-        return_to: safe_return_to(query.return_to),
-        site: true,
+    let Some(target) = site_target(query.return_to, query.origin) else {
+        return (StatusCode::BAD_REQUEST, "Site inconnu.").into_response();
     };
 
-    (jar.remove(cookie), Redirect::to(&redirect_url(&target)))
+    (jar.remove(cookie), Redirect::to(&redirect_url(&target))).into_response()
 }
 
 #[cfg(test)]

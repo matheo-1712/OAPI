@@ -74,11 +74,16 @@ pub async fn private_response(request: Request, next: Next) -> Response {
 /// Lets the configured website read the response with the browser's session cookie.
 /// Only exact `site_auth.url` origins are allowed; every other origin stays blocked by the browser.
 pub async fn site_cors(request: Request, next: Next) -> Response {
-    let allowed = crate::config::Config::global()
-        .site_origin()
-        .zip(request.headers().get(axum::http::header::ORIGIN))
-        .filter(|(site, origin)| origin.as_bytes() == site.as_bytes())
-        .map(|(_, origin)| origin.clone());
+    let config = crate::config::Config::global();
+    let allowed = request
+        .headers()
+        .get(axum::http::header::ORIGIN)
+        .filter(|origin| {
+            origin
+                .to_str()
+                .is_ok_and(|origin| config.is_site_origin(origin))
+        })
+        .cloned();
     let mut response = next.run(request).await;
     let headers = response.headers_mut();
     headers.insert(
@@ -117,7 +122,7 @@ async fn verify_and_check_role(
             .unwrap_or_default();
         // OAPI's own pages, plus the configured website (site_auth.url) using its session cookie
         let origin = origin.to_str().ok();
-        let from_site = origin.is_some() && origin == config.site_origin();
+        let from_site = origin.is_some_and(|origin| config.is_site_origin(origin));
         if origin != Some(expected.as_str()) && !from_site {
             return Err((
                 StatusCode::FORBIDDEN,
