@@ -599,7 +599,6 @@ async fn evaluate_with_definitions(
 ///
 /// Returns `Err` only if `badges.yaml` is invalid or an account list cannot be read;
 /// per-account failures are reported in [`TaskSummary::failed`]. No notification is sent.
-#[allow(dead_code)] // used by the background loop (added later)
 pub async fn refresh_all(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
     refresh_all_with_definitions(pb, catalogue()?).await
 }

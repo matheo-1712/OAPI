@@ -127,6 +127,7 @@ Deep dives into specific modules:
 - [🖼 Image Generation Engine](./docs/generation_images.md) ([EN](./docs/en/generation_images.md))
 - [⚙️ Configuration Management](./docs/configuration.md) ([EN](./docs/en/configuration.md))
 - [🔌 PocketBase Integration](./docs/pocketbase.md) ([EN](./docs/en/pocketbase.md))
+- [🗓 Tâches quotidiennes](./docs/daily_tasks.md)
 
 ---
 

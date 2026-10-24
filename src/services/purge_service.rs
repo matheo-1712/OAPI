@@ -67,7 +67,6 @@ async fn purge_account(
 ///
 /// Returns `Err` only if the list of accounts cannot be read; per-account failures
 /// are reported in [`TaskSummary::failed`].
-#[allow(dead_code)] // used by the background loop (added later)
 pub async fn purge_deleted_accounts(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
     let accounts = pb
         .list_all_records::<Value>(DISCORD_USERS_COLLECTION, "delete_at != '' && delete_at <= @now")

@@ -2,12 +2,24 @@
 //!
 //! [`next_run`] computes when the next daily run happens, in Europe/Paris local time.
 
+use std::future::Future;
+use std::pin::Pin;
+
 use chrono::{DateTime, Duration, LocalResult, NaiveTime, TimeZone, Utc};
 use chrono_tz::Europe::Paris;
 
+use crate::config::SchedulerConfig;
+use crate::services::{badge_service, purge_service};
+use crate::utils::pocketbase::PocketbaseClient;
+
+/// Boxed future returned by a daily task.
+pub type BoxFuture<'a, T> = Pin<Box<dyn Future<Output = T> + Send + 'a>>;
+
+/// A daily maintenance task.
+pub type TaskFn = for<'a> fn(&'a PocketbaseClient) -> BoxFuture<'a, Result<TaskSummary, String>>;
+
 /// Outcome of one maintenance task run.
 #[derive(Debug, Default, PartialEq)]
-#[allow(dead_code)] // consumed by the background loop (added later)
 pub struct TaskSummary {
     /// Number of items the task tried to handle.
     pub processed: usize,
@@ -21,7 +33,6 @@ pub struct TaskSummary {
 ///
 /// A time inside the spring-forward gap moves to the next existing local hour;
 /// an ambiguous time (autumn fall-back) resolves to its first occurrence.
-#[allow(dead_code)] // used by the background loop (added later)
 pub fn next_run(now: DateTime<Utc>, run_at: NaiveTime) -> DateTime<Utc> {
     let mut date = now.with_timezone(&Paris).date_naive();
     loop {
@@ -39,6 +50,80 @@ pub fn next_run(now: DateTime<Utc>, run_at: NaiveTime) -> DateTime<Utc> {
         }
         date = date.succ_opt().expect("date overflow");
     }
+}
+
+fn purge_task(pb: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
+    Box::pin(purge_service::purge_deleted_accounts(pb))
+}
+
+fn badges_task(pb: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
+    Box::pin(badge_service::refresh_all(pb))
+}
+
+/// Daily tasks, in execution order.
+pub const DAILY_TASKS: [(&str, TaskFn); 2] = [("purge", purge_task), ("badges", badges_task)];
+
+/// Runs each task in order, logging its outcome; a failure does not stop the next task.
+pub async fn run_tasks(
+    pb: &PocketbaseClient,
+    tasks: &[(&str, TaskFn)],
+) -> Vec<(String, Result<TaskSummary, String>)> {
+    let mut results = Vec::with_capacity(tasks.len());
+    for (name, task) in tasks {
+        let result = task(pb).await;
+        match &result {
+            Ok(summary) => tracing::info!(
+                task = *name,
+                processed = summary.processed,
+                succeeded = summary.succeeded,
+                failed = summary.failed.len(),
+                failed_ids = ?summary.failed,
+                "Daily task finished"
+            ),
+            Err(error) => tracing::error!(task = *name, %error, "Daily task failed"),
+        }
+        results.push((name.to_string(), result));
+    }
+    results
+}
+
+/// One daily pass: authenticates against PocketBase, then runs [`DAILY_TASKS`].
+async fn run_once() {
+    let mut pb = PocketbaseClient::new();
+    if let Err(error) = pb.login().await {
+        tracing::error!(%error, "Daily tasks skipped: PocketBase login failed");
+        return;
+    }
+    run_tasks(&pb, &DAILY_TASKS).await;
+}
+
+/// Starts the background loop that runs the daily tasks at the configured time.
+///
+/// Does nothing when the scheduler is disabled. A run that fails or panics is logged
+/// and retried the next day; a run missed while OAPI is stopped is not caught up.
+pub fn spawn(config: &SchedulerConfig) {
+    if !config.enabled {
+        tracing::info!("Daily tasks scheduler is disabled");
+        return;
+    }
+    let run_at = match config.run_time() {
+        Ok(time) => time,
+        Err(error) => {
+            tracing::error!(%error, "Daily tasks scheduler not started");
+            return;
+        }
+    };
+    tokio::spawn(async move {
+        loop {
+            let next = next_run(Utc::now(), run_at);
+            tracing::info!("Next daily tasks run at {}", next.with_timezone(&Paris));
+            let wait = (next - Utc::now()).to_std().unwrap_or_default();
+            tokio::time::sleep(wait).await;
+            if let Err(error) = tokio::spawn(run_once()).await {
+                tracing::error!(%error, "Daily tasks run aborted");
+            }
+        }
+    });
 }
 
 #[cfg(test)]
@@ -74,5 +159,25 @@ mod tests {
         let first = next_run(utc("2026-10-24T23:00:00Z"), t);
         assert_eq!(first, utc("2026-10-25T00:30:00Z"));
         assert_eq!(next_run(first, t), utc("2026-10-26T01:30:00Z"));
+    }
+
+    #[tokio::test]
+    async fn run_tasks_continues_after_failure() {
+        let pb = PocketbaseClient::for_test("http://127.0.0.1:9".into(), "t");
+        fn fail(_: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
+            Box::pin(async { Err("boom".into()) })
+        }
+        fn ok(_: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
+            Box::pin(async { Ok(TaskSummary { processed: 1, succeeded: 1, failed: vec![] }) })
+        }
+        let results = run_tasks(&pb, &[("purge", fail), ("badges", ok)]).await;
+        assert_eq!(results.len(), 2);
+        assert_eq!(results[0], ("purge".into(), Err("boom".into())));
+        assert!(results[1].1.is_ok());
+    }
+
+    #[test]
+    fn daily_tasks_run_purge_before_badges() {
+        assert_eq!(DAILY_TASKS.map(|(name, _)| name), ["purge", "badges"]);
     }
 }
