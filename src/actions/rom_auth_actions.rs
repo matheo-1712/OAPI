@@ -48,7 +48,6 @@ pub fn hash_token(token: &str) -> String {
 }
 
 /// Extracts the full `rom_...` token from a raw `Authorization` header value.
-#[allow(dead_code)] // used by the ROM auth middleware (next task)
 pub fn parse_rom_bearer(value: &str) -> Option<&str> {
     let token = value.strip_prefix("Bearer ")?;
     let hex = token.strip_prefix(ROM_TOKEN_PREFIX)?;
@@ -186,9 +185,12 @@ pub async fn exchange_code(
     })
 }
 
-pub async fn list_devices(pb: &PocketbaseClient, account: &str) -> Result<RomDeviceList, String> {
+pub async fn list_devices(
+    pb: &PocketbaseClient,
+    account: &str,
+) -> Result<RomDeviceList, RomAuthError> {
     if !valid_id(account) {
-        return Err("Invalid account ID".into());
+        return Err(RomAuthError::Invalid("Identifiant invalide."));
     }
     let records: Vec<IdentityTokenRecord> = pb
         .list_all_records(
@@ -230,7 +232,6 @@ pub async fn revoke_device(
 }
 
 #[derive(Deserialize)]
-#[allow(dead_code)] // used by the ROM auth middleware (next task)
 struct LinkedUser {
     #[serde(default)]
     discord_id: String,
@@ -239,7 +240,6 @@ struct LinkedUser {
 }
 
 /// Resolves a full `rom_` token to the linked member's claims (role Normal).
-#[allow(dead_code)] // used by the ROM auth middleware (next task)
 pub async fn claims_for_token(
     pb: &PocketbaseClient,
     token: &str,

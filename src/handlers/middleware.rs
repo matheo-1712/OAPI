@@ -187,6 +187,66 @@ pub async fn require_auth(
     .await
 }
 
+/// Like `require_auth`, but the friend list also accepts a game ROM `rom_` token.
+/// Any other route keeps rejecting `rom_` tokens (they never match the service key).
+pub async fn require_friends_reader(
+    jar: CookieJar,
+    mut request: Request,
+    next: Next,
+) -> Result<Response, (StatusCode, String)> {
+    let mut values = request
+        .headers()
+        .get_all(axum::http::header::AUTHORIZATION)
+        .iter();
+    let single = match (values.next(), values.next()) {
+        (Some(value), None) => Some(value),
+        _ => None,
+    };
+    let rom_like = single.is_some_and(|value| value.as_bytes().starts_with(b"Bearer rom_"));
+    if rom_like {
+        let token = single
+            .and_then(|value| value.to_str().ok())
+            .and_then(crate::actions::rom_auth_actions::parse_rom_bearer)
+            .map(str::to_owned);
+        let Some(token) = token else {
+            return Err((
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized. Please log in.".to_string(),
+            ));
+        };
+        let mut pb = crate::utils::pocketbase::PocketbaseClient::new();
+        let claims = match pb.login().await {
+            Ok(()) => crate::actions::rom_auth_actions::claims_for_token(&pb, &token).await,
+            Err(error) => Err(error),
+        };
+        return match claims {
+            Ok(Some(claims)) => {
+                request.extensions_mut().insert(claims);
+                Ok(next.run(request).await)
+            }
+            Ok(None) => Err((
+                StatusCode::UNAUTHORIZED,
+                "Unauthorized. Please log in.".to_string(),
+            )),
+            Err(error) => {
+                error!("ROM token verification failed: {}", error);
+                Err((
+                    StatusCode::BAD_GATEWAY,
+                    "Liaison ROM temporairement indisponible.".to_string(),
+                ))
+            }
+        };
+    }
+    verify_and_check_role(
+        jar,
+        request,
+        next,
+        &[],
+        &crate::config::Config::global().auth.service_api_key,
+    )
+    .await
+}
+
 /// Middleware to require LoutreInvesti or Admin accreditation
 #[allow(dead_code)]
 /// Middleware to ensure the user has at least the `LoutreInvesti` role.
@@ -311,6 +371,7 @@ mod activity_tests {
 
     #[tokio::test]
     async fn service_can_access_explicit_accounts_without_a_discord_subject() {
+        crate::config::init();
         let claims = service_claims(TEST_KEY, TEST_KEY).unwrap();
         assert!(
             crate::actions::image_access::can_access_minecraft(

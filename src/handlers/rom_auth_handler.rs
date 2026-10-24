@@ -101,7 +101,7 @@ pub async fn devices(
     rom_auth_actions::list_devices(&pb, &account)
         .await
         .map(Json)
-        .map_err(unavailable)
+        .map_err(failure)
 }
 
 #[utoipa::path(post, path = "/auth/rom/devices/{device}/revoke", tag = "ROM",

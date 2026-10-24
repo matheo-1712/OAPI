@@ -68,8 +68,15 @@ pub fn api_routes() -> Router {
         .route_layer(axum::middleware::from_fn(middleware::require_auth))
         .route_layer(axum::middleware::from_fn(middleware::site_cors));
 
-    let friends_routes = Router::new()
+    // The friend list is the only route a game ROM token may read.
+    let friends_read_routes = Router::new()
         .route("/friends/:account", get(friends_handler::list))
+        .route_layer(axum::middleware::from_fn(
+            middleware::require_friends_reader,
+        ))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    let friends_routes = Router::new()
         .route(
             "/friends/:account/:user/request",
             post(friends_handler::request),
@@ -157,6 +164,7 @@ pub fn api_routes() -> Router {
         .merge(site_auth_routes)
         .merge(rom_site_routes)
         .merge(site_protected_routes)
+        .merge(friends_read_routes)
         .merge(friends_routes)
         .merge(protected_routes)
         .merge(discord_routes)
@@ -439,6 +447,7 @@ mod tests {
             .await
             .unwrap();
         assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        assert_eq!(response.headers()["cache-control"], "no-store");
         for (content_type, body) in [("application/json", ""), ("text/plain", "nope")] {
             let response = api_routes()
                 .oneshot(
@@ -452,6 +461,59 @@ mod tests {
                 .await
                 .unwrap();
             assert!(response.status().is_client_error(), "{}", response.status());
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_tokens_only_open_the_friend_list() {
+        config::init();
+        let token = format!("Bearer rom_{}", "a".repeat(64));
+        for (method, path) in [
+            ("POST", "/badges/me/refresh"),
+            ("GET", "/discord/stats/me"),
+            ("POST", "/friends/me/user/request"),
+            ("POST", "/auth/rom/code"),
+            ("GET", "/auth/rom/devices"),
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method(method)
+                        .uri(path)
+                        .header("authorization", &token)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(
+                response.status(),
+                StatusCode::UNAUTHORIZED,
+                "{method} {path}"
+            );
+        }
+    }
+
+    #[tokio::test]
+    async fn malformed_rom_tokens_are_rejected_before_pocketbase() {
+        config::init();
+        for value in [
+            "Bearer rom_abc".to_string(),
+            format!("Bearer rom_{}", "A".repeat(64)),
+            format!("Bearer rom_{}", "a".repeat(65)),
+            format!("Bearer rom_{} ", "a".repeat(64)),
+        ] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .uri("/friends/me")
+                        .header("authorization", value)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
         }
     }
 
