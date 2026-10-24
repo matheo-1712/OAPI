@@ -113,6 +113,12 @@ pub fn spawn(config: &SchedulerConfig) {
             return;
         }
     };
+    if crate::config::Config::global().server.env != "production" {
+        tracing::warn!(
+            "Daily tasks scheduler is enabled outside production and will purge accounts on the configured PocketBase at {}; set scheduler.enabled: false in config.yaml to disable",
+            config.run_at
+        );
+    }
     tokio::spawn(async move {
         loop {
             let next = next_run(Utc::now(), run_at);

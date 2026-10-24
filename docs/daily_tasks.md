@@ -23,9 +23,21 @@ Avec `enabled: false`, aucune tâche n'est planifiée. Une valeur `run_at` inval
 empêche le démarrage d'OAPI. Au démarrage et après chaque passage, le log indique la
 prochaine exécution : `Next daily tasks run at …`.
 
+Si le scheduler est activé alors que `server.env` n'est pas `production`, OAPI logge un
+avertissement au démarrage : la purge s'exécutera sur le PocketBase configuré. Mettre
+`scheduler.enabled: false` dans `config.yaml` pour la désactiver.
+
 ## Purge des comptes Discord
 
 Sont purgés les `discord_users` dont `delete_at` est renseigné et déjà dépassé.
+`discord_users.delete_at` doit être un champ PocketBase de type `date`. OAPI revérifie la
+date avant de purger : un compte dont `delete_at` est futur, vide ou illisible n'est
+jamais supprimé (il est compté en échec et loggé par son ID).
+
+**Plafond.** Au-delà de 50 comptes à purger dans un même passage (`MAX_PURGE_PER_RUN`
+dans `purge_service.rs`), rien n'est purgé et la tâche logge une erreur
+(`N accounts due for deletion, above the limit of 50; nothing purged`). Si ce volume est
+légitime, relever la constante.
 Pour chaque compte (record `R`, identifiant Discord `S`), dans cet ordre :
 
 | Étape | Collection | Action |
@@ -49,6 +61,9 @@ Une erreur sur une étape arrête le traitement de ce compte seul : le record
 `discord_users` n'est pas supprimé, et le compte est repris le lendemain. Les autres
 comptes continuent. Si la tâche entière échoue (liste illisible, connexion PocketBase
 impossible), le prochain passage a lieu le lendemain.
+
+Un arrêt d'OAPI pendant un passage laisse au plus un compte partiellement purgé (le
+record `discord_users` est supprimé en dernier) ; il est repris le lendemain.
 
 ## Badges
 

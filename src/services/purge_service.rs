@@ -12,7 +12,11 @@ use crate::utils::constants::{
     MINECRAFT_PLAYERS_COLLECTION,
 };
 use crate::utils::pocketbase::PocketbaseClient;
+use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{Value, json};
+
+/// Safety cap: above this many due accounts, a run purges nothing.
+const MAX_PURGE_PER_RUN: usize = 50;
 
 /// Filter matching `field` against the record ID and, when known, the Discord snowflake.
 fn account_filter(field: &str, record: &str, snowflake: Option<&str>) -> String {
@@ -20,6 +24,18 @@ fn account_filter(field: &str, record: &str, snowflake: Option<&str>) -> String 
         Some(s) => format!("{field} = '{record}' || {field} = '{s}'"),
         None => format!("{field} = '{record}'"),
     }
+}
+
+/// Whether `value` is a deletion date (PocketBase or RFC 3339 format) that is not after `now`.
+/// Anything else (empty, missing, unparseable) is not due.
+fn deletion_due(value: &Value, now: DateTime<Utc>) -> bool {
+    let Some(text) = value.as_str() else {
+        return false;
+    };
+    let date = NaiveDateTime::parse_from_str(text, "%Y-%m-%d %H:%M:%S%.fZ")
+        .map(|naive| naive.and_utc())
+        .or_else(|_| DateTime::parse_from_rfc3339(text).map(|d| d.with_timezone(&Utc)));
+    date.is_ok_and(|d| d <= now)
 }
 
 /// Deletes every record of `collection` matching `filter`.
@@ -65,16 +81,32 @@ async fn purge_account(
 
 /// Purges all accounts whose `delete_at` is set and already past.
 ///
-/// Returns `Err` only if the list of accounts cannot be read; per-account failures
-/// are reported in [`TaskSummary::failed`].
+/// The date is re-checked here: an account whose `delete_at` is not a past date is
+/// reported as failed and left untouched. More than [`MAX_PURGE_PER_RUN`] due accounts
+/// purges nothing.
+///
+/// Returns `Err` if the list of accounts cannot be read or exceeds the cap; per-account
+/// failures are reported in [`TaskSummary::failed`].
 pub async fn purge_deleted_accounts(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
     let accounts = pb
         .list_all_records::<Value>(DISCORD_USERS_COLLECTION, "delete_at != '' && delete_at <= @now")
         .await?;
+    if accounts.len() > MAX_PURGE_PER_RUN {
+        return Err(format!(
+            "{} accounts due for deletion, above the limit of {MAX_PURGE_PER_RUN}; nothing purged",
+            accounts.len()
+        ));
+    }
+    let now = Utc::now();
     let mut summary = TaskSummary::default();
     for account in accounts {
         summary.processed += 1;
         let record = account["id"].as_str().unwrap_or_default();
+        if !deletion_due(&account["delete_at"], now) {
+            tracing::warn!("Discord account {record} not purged: delete_at is not a past date");
+            summary.failed.push(record.to_string());
+            continue;
+        }
         let snowflake = account["discord_id"].as_str().filter(|s| valid_id(s));
         match purge_account(pb, record, snowflake).await {
             Ok(()) => summary.succeeded += 1,
@@ -98,6 +130,7 @@ mod tests {
     const FRIENDS: &str = "/api/collections/discord_friendships/records";
     const TOKENS: &str = "/api/collections/discord_identity_token/records";
     const PLAYERS: &str = "/api/collections/players/records";
+    const PAST: &str = "2020-01-01 00:00:00.000Z";
     const DUE: &str = "delete_at != '' && delete_at <= @now";
 
     fn page(items: Value) -> String {
@@ -143,7 +176,7 @@ mod tests {
         let mut server = Server::new_async().await;
         let both = "discord_user = 'rec1' || discord_user = '123'";
         let mut mocks = vec![
-            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1","discord_id":"123"}])).await,
+            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1","discord_id":"123","delete_at":PAST}])).await,
             list_mock(&mut server, STATS, both, json!([{"id":"s1"}])).await,
             list_mock(&mut server, BADGES, both, json!([{"id":"b1"}])).await,
             list_mock(&mut server, FRIENDS, "user_a = 'rec1' || user_b = 'rec1'", json!([{"id":"f1"}])).await,
@@ -185,7 +218,7 @@ mod tests {
     async fn failed_step_keeps_account_and_continues() {
         let mut server = Server::new_async().await;
         let mut mocks = vec![
-            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1"},{"id":"rec2"}])).await,
+            list_mock(&mut server, USERS, DUE, json!([{"id":"rec1","delete_at":PAST},{"id":"rec2","delete_at":PAST}])).await,
         ];
         for (rec, stat) in [("rec1", "s1"), ("rec2", "s2")] {
             let own = format!("discord_user = '{rec}'");
@@ -217,7 +250,7 @@ mod tests {
     #[tokio::test]
     async fn invalid_record_id_is_failed_without_writes() {
         let mut server = Server::new_async().await;
-        let users = list_mock(&mut server, USERS, DUE, json!([{"id":"bad id"}])).await;
+        let users = list_mock(&mut server, USERS, DUE, json!([{"id":"bad id","delete_at":PAST}])).await;
         let other = server
             .mock("GET", Matcher::Regex("^/api/collections/(discord_user_stats|badges_earned|discord_friendships|discord_identity_token|players)/".into()))
             .expect(0)
@@ -237,5 +270,60 @@ mod tests {
         users.assert_async().await;
         other.assert_async().await;
         writes.assert_async().await;
+    }
+
+    #[test]
+    fn deletion_due_accepts_both_formats_and_rejects_the_rest() {
+        let now = DateTime::parse_from_rfc3339("2026-10-24T12:00:00Z").unwrap().with_timezone(&Utc);
+        for due in ["2026-10-24 11:59:59.000Z", "2026-10-24 12:00:00.000Z", "2026-10-24T11:00:00Z", "2020-01-01 00:00:00Z"] {
+            assert!(deletion_due(&json!(due), now), "{due}");
+        }
+        for not_due in ["2026-10-24 12:15:00.000Z", "2026-10-24T12:15:00Z", "", "01/12/2020", "garbage"] {
+            assert!(!deletion_due(&json!(not_due), now), "{not_due}");
+        }
+        assert!(!deletion_due(&Value::Null, now));
+        assert!(!deletion_due(&json!(42), now));
+    }
+
+    #[tokio::test]
+    async fn future_or_unparseable_delete_at_is_never_purged() {
+        let mut server = Server::new_async().await;
+        let future = (Utc::now() + chrono::Duration::days(365)).format("%Y-%m-%d %H:%M:%S%.3fZ").to_string();
+        let users = list_mock(
+            &mut server,
+            USERS,
+            DUE,
+            json!([
+                {"id":"rec1","delete_at":future},
+                {"id":"rec2","delete_at":""},
+                {"id":"rec3","delete_at":"01/12/2026"}
+            ]),
+        )
+        .await;
+        let deletes = server.mock("DELETE", Matcher::Any).expect(0).create_async().await;
+        let pb = PocketbaseClient::for_test(server.url(), "t");
+        let summary = purge_deleted_accounts(&pb).await.unwrap();
+        assert_eq!(
+            summary,
+            TaskSummary { processed: 3, succeeded: 0, failed: vec!["rec1".into(), "rec2".into(), "rec3".into()] }
+        );
+        users.assert_async().await;
+        deletes.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn too_many_due_accounts_purges_nothing() {
+        let mut server = Server::new_async().await;
+        let items: Vec<Value> = (0..=MAX_PURGE_PER_RUN)
+            .map(|i| json!({"id": format!("rec{i}"), "delete_at": PAST}))
+            .collect();
+        let users = list_mock(&mut server, USERS, DUE, Value::Array(items)).await;
+        let deletes = server.mock("DELETE", Matcher::Any).expect(0).create_async().await;
+        let pb = PocketbaseClient::for_test(server.url(), "t");
+        let error = purge_deleted_accounts(&pb).await.unwrap_err();
+        assert!(error.contains("51"), "{error}");
+        assert!(!error.contains("rec0"), "{error}");
+        users.assert_async().await;
+        deletes.assert_async().await;
     }
 }

@@ -627,8 +627,8 @@ async fn refresh_all_with_definitions(
                 summary.succeeded += 1;
                 created += results.iter().filter(|r| r.created).count();
             }
-            Err(_) => {
-                tracing::warn!("Badge refresh failed for record {id}");
+            Err(e) => {
+                tracing::warn!("Badge refresh failed for record {id}: {e}");
                 summary.failed.push(id.to_string());
             }
         }
