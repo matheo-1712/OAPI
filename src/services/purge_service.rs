@@ -16,7 +16,7 @@ use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{Value, json};
 
 /// Safety cap: above this many due accounts, a run purges nothing.
-const MAX_PURGE_PER_RUN: usize = 50;
+const MAX_PURGE_PER_RUN: usize = 100;
 
 /// Filter matching `field` against the record ID and, when known, the Discord snowflake.
 fn account_filter(field: &str, record: &str, snowflake: Option<&str>) -> String {
@@ -405,7 +405,10 @@ mod tests {
             .await;
         let pb = PocketbaseClient::for_test(server.url(), "t");
         let error = purge_deleted_accounts(&pb).await.unwrap_err();
-        assert!(error.contains("51"), "{error}");
+        assert!(
+            error.contains(&format!("{} accounts", MAX_PURGE_PER_RUN + 1)),
+            "{error}"
+        );
         assert!(!error.contains("rec0"), "{error}");
         users.assert_async().await;
         deletes.assert_async().await;

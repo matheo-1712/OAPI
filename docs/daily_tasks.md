@@ -37,9 +37,9 @@ Sont purgés les `discord_users` dont `delete_at` est renseigné et déjà dépa
 date avant de purger : un compte dont `delete_at` est futur, vide ou illisible n'est
 jamais supprimé (il est compté en échec et loggé par son ID).
 
-**Plafond.** Au-delà de 50 comptes à purger dans un même passage (`MAX_PURGE_PER_RUN`
+**Plafond.** Au-delà de 100 comptes à purger dans un même passage (`MAX_PURGE_PER_RUN`
 dans `purge_service.rs`), rien n'est purgé et la tâche logge une erreur
-(`N accounts due for deletion, above the limit of 50; nothing purged`). Si ce volume est
+(`N accounts due for deletion, above the limit of 100; nothing purged`). Si ce volume est
 légitime, relever la constante.
 Pour chaque compte (record `R`, identifiant Discord `S`), dans cet ordre :
 
