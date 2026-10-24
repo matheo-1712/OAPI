@@ -5,6 +5,18 @@
 use chrono::{DateTime, Duration, LocalResult, NaiveTime, TimeZone, Utc};
 use chrono_tz::Europe::Paris;
 
+/// Outcome of one maintenance task run.
+#[derive(Debug, Default, PartialEq)]
+#[allow(dead_code)] // consumed by the background loop (added later)
+pub struct TaskSummary {
+    /// Number of items the task tried to handle.
+    pub processed: usize,
+    /// Number of items handled successfully.
+    pub succeeded: usize,
+    /// Record IDs of the items that failed.
+    pub failed: Vec<String>,
+}
+
 /// First instant strictly after `now` at which the Paris wall clock reads `run_at`.
 ///
 /// A time inside the spring-forward gap moves to the next existing local hour;

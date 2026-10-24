@@ -1,5 +1,6 @@
 pub mod badge_service;
 pub mod image_service;
+pub mod purge_service;
 pub mod scheduler;
 
 // Re-export for easier access if desired
