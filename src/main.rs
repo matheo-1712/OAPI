@@ -42,6 +42,10 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::friends_handler::request,
         handlers::friends_handler::accept,
         handlers::friends_handler::remove,
+        handlers::rom_auth_handler::create_code,
+        handlers::rom_auth_handler::exchange,
+        handlers::rom_auth_handler::devices,
+        handlers::rom_auth_handler::revoke,
         handlers::discord_handler::create_discord_summary_by_id,
         handlers::discord_handler::create_my_discord_summary,
         handlers::minecraft_handler::create_minecraft_summary_by_id,
@@ -61,6 +65,11 @@ use utoipa_swagger_ui::SwaggerUi;
         models::discord_friends::Friend,
         models::discord_friends::FriendList,
         models::discord_friends::FriendshipResponse,
+        models::rom_auth::RomCodeResponse,
+        models::rom_auth::RomTokenRequest,
+        models::rom_auth::RomTokenResponse,
+        models::rom_auth::RomDevice,
+        models::rom_auth::RomDeviceList,
         services::badge_service::AwardRequest,
         services::badge_service::RefreshResponse,
         services::badge_service::NewBadge,
@@ -255,6 +264,9 @@ fn update_openapi_paths(openapi: &mut utoipa::openapi::OpenApi, config: &config:
             || path.starts_with("/generated_images/")
             || path == "/auth/me"
             || path == "/auth/site/me"
+            || path == "/auth/rom/code"
+            || path == "/auth/rom/devices"
+            || path == "/auth/rom/devices/{device}/revoke"
             || path == "/discord-summary/{id}"
             || path == "/discord-summary/me"
             || path == "/minecraft-summary/{uuid}"
@@ -320,6 +332,10 @@ mod openapi_tests {
             ("/friends/{account}/{user}/request", "post"),
             ("/friends/{account}/{user}/accept", "post"),
             ("/friends/{account}/{user}/remove", "post"),
+            ("/auth/rom/code", "post"),
+            ("/auth/rom/token", "post"),
+            ("/auth/rom/devices", "get"),
+            ("/auth/rom/devices/{device}/revoke", "post"),
         ] {
             assert!(
                 json["paths"][format!("{base}{path}")][method].is_object(),
@@ -336,7 +352,7 @@ mod openapi_tests {
             json["paths"][&personal_image_path]["post"]["security"][0],
             serde_json::json!({"session_cookie":[]})
         );
-        assert_eq!(json["paths"].as_object().unwrap().len(), 27);
+        assert_eq!(json["paths"].as_object().unwrap().len(), 31);
         for item in json["paths"].as_object().unwrap().values() {
             for operation in item.as_object().unwrap().values() {
                 assert!(operation["responses"]["429"].is_object());

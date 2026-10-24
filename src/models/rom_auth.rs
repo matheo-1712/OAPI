@@ -1,5 +1,4 @@
 //! Data models for ROM identity tokens (`discord_identity_token` collection).
-#![allow(dead_code)] // consumed by later tasks (handlers)
 
 use serde::{Deserialize, Serialize};
 use utoipa::ToSchema;
@@ -44,6 +43,7 @@ pub struct RomDeviceList {
 
 /// Raw PocketBase record.
 #[derive(Deserialize, Clone)]
+#[allow(dead_code)] // token/linking_code are read by the ROM auth middleware (next task)
 pub struct IdentityTokenRecord {
     pub id: String,
     #[serde(default)]

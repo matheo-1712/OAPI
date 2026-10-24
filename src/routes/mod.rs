@@ -6,7 +6,7 @@
 use crate::config::Config;
 use crate::handlers::{
     admin_handler, auth_handler, discord_handler, friends_handler, investor_handler, middleware,
-    minecraft_handler, monitoring_handler,
+    minecraft_handler, monitoring_handler, rom_auth_handler,
 };
 use axum::{
     Router,
@@ -57,6 +57,17 @@ pub fn api_routes() -> Router {
 
     // Friends: session cookie for `me` (website included), service token for explicit accounts.
     // Mutations are bodiless POSTs so the website never needs a CORS preflight.
+    // ROM linking: website session creates codes and manages devices; the game exchanges its code unauthenticated.
+    let rom_site_routes = Router::new()
+        .route("/auth/rom/code", post(rom_auth_handler::create_code))
+        .route("/auth/rom/devices", get(rom_auth_handler::devices))
+        .route(
+            "/auth/rom/devices/:device/revoke",
+            post(rom_auth_handler::revoke),
+        )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
     let friends_routes = Router::new()
         .route("/friends/:account", get(friends_handler::list))
         .route(
@@ -142,7 +153,9 @@ pub fn api_routes() -> Router {
         .route("/auth/logout", get(auth_handler::logout))
         .route("/auth/site/login", get(auth_handler::site_login))
         .route("/auth/site/logout", get(auth_handler::site_logout))
+        .route("/auth/rom/token", post(rom_auth_handler::exchange))
         .merge(site_auth_routes)
+        .merge(rom_site_routes)
         .merge(site_protected_routes)
         .merge(friends_routes)
         .merge(protected_routes)
@@ -369,6 +382,76 @@ mod tests {
                     .unwrap();
                 assert_eq!(response.status(), StatusCode::FORBIDDEN);
             }
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_site_routes_require_a_session() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for (method, path) in [
+            ("POST", "/auth/rom/code"),
+            ("GET", "/auth/rom/devices"),
+            ("POST", "/auth/rom/devices/abc/revoke"),
+        ] {
+            for cookie in ["", "auth_token=forged"] {
+                let response = api_routes()
+                    .oneshot(
+                        Request::builder()
+                            .method(method)
+                            .uri(path)
+                            .header("cookie", cookie)
+                            .header("origin", site.as_str())
+                            .body(Body::empty())
+                            .unwrap(),
+                    )
+                    .await
+                    .unwrap();
+                assert_eq!(
+                    response.status(),
+                    StatusCode::UNAUTHORIZED,
+                    "{method} {path}"
+                );
+                assert_eq!(response.headers()["cache-control"], "no-store");
+                assert_eq!(
+                    response.headers()["access-control-allow-origin"],
+                    site.as_str()
+                );
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_token_exchange_rejects_malformed_codes_without_auth() {
+        config::init();
+        let response = api_routes()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/auth/rom/token")
+                    .header("content-type", "application/json")
+                    .body(Body::from(r#"{"code":"12a456"}"#))
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::BAD_REQUEST);
+        for (content_type, body) in [("application/json", ""), ("text/plain", "nope")] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/auth/rom/token")
+                        .header("content-type", content_type)
+                        .body(Body::from(body))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert!(response.status().is_client_error(), "{}", response.status());
         }
     }
 

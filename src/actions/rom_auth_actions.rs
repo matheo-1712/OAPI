@@ -1,5 +1,4 @@
 //! Pure helpers for linking a game ROM to a Discord account (code -> `rom_` token).
-#![allow(dead_code)] // consumed by later tasks (handlers)
 
 use crate::models::rom_auth::{
     IdentityTokenRecord, RomCodeResponse, RomDevice, RomDeviceList, RomTokenResponse,
@@ -49,6 +48,7 @@ pub fn hash_token(token: &str) -> String {
 }
 
 /// Extracts the full `rom_...` token from a raw `Authorization` header value.
+#[allow(dead_code)] // used by the ROM auth middleware (next task)
 pub fn parse_rom_bearer(value: &str) -> Option<&str> {
     let token = value.strip_prefix("Bearer ")?;
     let hex = token.strip_prefix(ROM_TOKEN_PREFIX)?;
@@ -69,6 +69,7 @@ pub fn sanitize_label(label: Option<&str>) -> String {
         .collect()
 }
 
+#[derive(Debug)]
 pub enum RomAuthError {
     Invalid(&'static str),
     NotFound(&'static str),
@@ -99,6 +100,9 @@ pub async fn create_code(
     account: &str,
     label: &str,
 ) -> Result<RomCodeResponse, RomAuthError> {
+    if !valid_id(account) {
+        return Err(RomAuthError::Invalid("Identifiant invalide."));
+    }
     let stale: Vec<IdentityTokenRecord> = pb
         .list_all_records(
             DISCORD_IDENTITY_TOKEN_COLLECTION,
@@ -183,6 +187,9 @@ pub async fn exchange_code(
 }
 
 pub async fn list_devices(pb: &PocketbaseClient, account: &str) -> Result<RomDeviceList, String> {
+    if !valid_id(account) {
+        return Err("Invalid account ID".into());
+    }
     let records: Vec<IdentityTokenRecord> = pb
         .list_all_records(
             DISCORD_IDENTITY_TOKEN_COLLECTION,
@@ -208,8 +215,8 @@ pub async fn revoke_device(
     account: &str,
     device: &str,
 ) -> Result<(), RomAuthError> {
-    if !valid_id(device) {
-        return Err(RomAuthError::Invalid("Invalid record ID"));
+    if !valid_id(account) || !valid_id(device) {
+        return Err(RomAuthError::Invalid("Identifiant invalide."));
     }
     let record = find_record(
         pb,
@@ -223,6 +230,7 @@ pub async fn revoke_device(
 }
 
 #[derive(Deserialize)]
+#[allow(dead_code)] // used by the ROM auth middleware (next task)
 struct LinkedUser {
     #[serde(default)]
     discord_id: String,
@@ -231,6 +239,7 @@ struct LinkedUser {
 }
 
 /// Resolves a full `rom_` token to the linked member's claims (role Normal).
+#[allow(dead_code)] // used by the ROM auth middleware (next task)
 pub async fn claims_for_token(
     pb: &PocketbaseClient,
     token: &str,
@@ -300,9 +309,18 @@ mod tests {
     #[test]
     fn rom_bearer_requires_exact_format() {
         let token = generate_token();
-        assert_eq!(parse_rom_bearer(&format!("Bearer {token}")), Some(token.as_str()));
-        for bad in [token.clone(), format!("bearer {token}"), format!("Bearer {}", token.to_uppercase()),
-                    format!("Bearer {}x", token), "Bearer rom_abc".into(), format!("Bearer {}", &token[4..])] {
+        assert_eq!(
+            parse_rom_bearer(&format!("Bearer {token}")),
+            Some(token.as_str())
+        );
+        for bad in [
+            token.clone(),
+            format!("bearer {token}"),
+            format!("Bearer {}", token.to_uppercase()),
+            format!("Bearer {}x", token),
+            "Bearer rom_abc".into(),
+            format!("Bearer {}", &token[4..]),
+        ] {
             assert_eq!(parse_rom_bearer(&bad), None, "{bad}");
         }
     }
@@ -432,8 +450,7 @@ mod tests {
             .with_status(200)
             .with_header("content-type", "application/json")
             .with_body_from_request(move |req| {
-                *captured.lock().unwrap() =
-                    String::from_utf8(req.body().unwrap().clone()).unwrap();
+                *captured.lock().unwrap() = String::from_utf8(req.body().unwrap().clone()).unwrap();
                 json!({"id":"dev1"}).to_string().into_bytes()
             })
             .expect(1)
@@ -491,7 +508,13 @@ mod tests {
         assert!(claims_for_token(&pb, &token).await.unwrap().is_none());
 
         let mut server = Server::new_async().await;
-        list_mock(&mut server, COL, &f, json!([{"id":"dev1","discord_user":"u1"}])).await;
+        list_mock(
+            &mut server,
+            COL,
+            &f,
+            json!([{"id":"dev1","discord_user":"u1"}]),
+        )
+        .await;
         list_mock(
             &mut server,
             "/api/collections/discord_users/records",

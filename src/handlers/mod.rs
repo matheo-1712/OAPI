@@ -10,3 +10,4 @@ pub mod middleware;
 pub mod minecraft_handler;
 pub mod monitoring_handler;
 pub mod rate_limit;
+pub mod rom_auth_handler;
