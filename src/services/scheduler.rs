@@ -97,10 +97,17 @@ async fn run_once() {
     run_tasks(&pb, &DAILY_TASKS).await;
 }
 
-/// Starts the background loop that runs the daily tasks at the configured time.
+/// Runs one daily pass in its own task, so a panic is logged instead of ending the loop.
+async fn run_guarded() {
+    if let Err(error) = tokio::spawn(run_once()).await {
+        tracing::error!(%error, "Daily tasks run aborted");
+    }
+}
+
+/// Starts the background loop: one pass at startup, then one each day at the configured time.
 ///
 /// Does nothing when the scheduler is disabled. A run that fails or panics is logged
-/// and retried the next day; a run missed while OAPI is stopped is not caught up.
+/// and retried at the next run; the startup pass covers runs missed while OAPI was stopped.
 pub fn spawn(config: &SchedulerConfig) {
     if !config.enabled {
         tracing::info!("Daily tasks scheduler is disabled");
@@ -115,19 +122,19 @@ pub fn spawn(config: &SchedulerConfig) {
     };
     if crate::config::Config::global().server.env != "production" {
         tracing::warn!(
-            "Daily tasks scheduler is enabled outside production and will purge accounts on the configured PocketBase at {}; set scheduler.enabled: false in config.yaml to disable",
+            "Daily tasks scheduler is enabled outside production and will purge accounts on the configured PocketBase now and at {}; set scheduler.enabled: false in config.yaml to disable",
             config.run_at
         );
     }
     tokio::spawn(async move {
+        tracing::info!("Running daily tasks at startup");
+        run_guarded().await;
         loop {
             let next = next_run(Utc::now(), run_at);
             tracing::info!("Next daily tasks run at {}", next.with_timezone(&Paris));
             let wait = (next - Utc::now()).to_std().unwrap_or_default();
             tokio::time::sleep(wait).await;
-            if let Err(error) = tokio::spawn(run_once()).await {
-                tracing::error!(%error, "Daily tasks run aborted");
-            }
+            run_guarded().await;
         }
     });
 }

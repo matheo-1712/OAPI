@@ -9,8 +9,10 @@ Une tâche en échec n'empêche pas la suivante de s'exécuter.
 
 ## Horaire et configuration
 
-Les tâches se lancent une fois par jour à l'heure `scheduler.run_at` (format `HH:MM`,
-heure de Paris, `04:00` par défaut). Le bloc `scheduler` se règle dans `config.yaml`
+Les tâches se lancent une première fois au démarrage d'OAPI, puis une fois par jour à
+l'heure `scheduler.run_at` (format `HH:MM`, heure de Paris, `04:00` par défaut). Le
+passage du démarrage se fait en arrière-plan : le serveur HTTP répond pendant ce temps.
+Les deux passages ne se chevauchent jamais. Le bloc `scheduler` se règle dans `config.yaml`
 (voir [configuration](./configuration.md)) :
 
 ```yaml
@@ -19,12 +21,13 @@ scheduler:
   run_at: "04:00"
 ```
 
-Avec `enabled: false`, aucune tâche n'est planifiée. Une valeur `run_at` invalide
-empêche le démarrage d'OAPI. Au démarrage et après chaque passage, le log indique la
-prochaine exécution : `Next daily tasks run at …`.
+Avec `enabled: false`, aucune tâche n'est lancée, ni au démarrage ni ensuite. Une valeur
+`run_at` invalide empêche le démarrage d'OAPI. Le log indique `Running daily tasks at
+startup`, puis, après chaque passage, la prochaine exécution : `Next daily tasks run at …`.
 
 Si le scheduler est activé alors que `server.env` n'est pas `production`, OAPI logge un
-avertissement au démarrage : la purge s'exécutera sur le PocketBase configuré. Mettre
+avertissement au démarrage : la purge s'exécutera tout de suite, puis chaque jour, sur le
+PocketBase configuré. Chaque `cargo run` en local lance donc une purge. Mettre
 `scheduler.enabled: false` dans `config.yaml` pour la désactiver.
 
 ## Purge des comptes Discord
@@ -72,11 +75,12 @@ avec les règles de [`badges.yaml`](./badges.md). Elle est silencieuse : aucune
 notification n'est envoyée. Un `badges.yaml` invalide fait échouer cette tâche
 (loggée) sans affecter la purge.
 
-## Absence de rattrapage
+## Redémarrage et rattrapage
 
-Si OAPI est arrêté à l'heure prévue, le passage manqué n'est pas rattrapé au
-redémarrage : les tâches s'exécutent à la prochaine échéance. Une panique pendant un
-passage est loggée sans arrêter le serveur ni la boucle.
+Si OAPI est arrêté à l'heure prévue, le passage du démarrage rattrape le passage manqué.
+Chaque redémarrage (déploiement, crash) relance donc les tâches ; elles sont sans effet
+sur ce qui est déjà fait (badges déjà acquis, comptes déjà purgés). Une panique pendant
+un passage est loggée sans arrêter le serveur ni la boucle.
 
 ## Logs
 
