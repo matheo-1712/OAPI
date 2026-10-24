@@ -709,9 +709,15 @@ mod tests {
                 server
                     .mock("POST", "/api/collections/badges_earned/records")
                     .match_header("authorization", "api-token")
-                    .match_body(Matcher::Json(
-                        serde_json::json!({"discord_user":"user", "badge":format!("badge{i}")}),
-                    ))
+                    .match_body(Matcher::AllOf(vec![
+                        Matcher::PartialJson(
+                            serde_json::json!({"discord_user":"user", "badge":format!("badge{i}")}),
+                        ),
+                        Matcher::Regex(
+                            r#""date_received":"\d{4}-\d{2}-\d{2} \d{2}:\d{2}:\d{2}\.\d{3}Z""#
+                                .into(),
+                        ),
+                    ]))
                     .with_status(200)
                     .with_header("content-type", "application/json")
                     .with_body(r#"{"id":"earned"}"#)

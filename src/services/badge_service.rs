@@ -359,7 +359,12 @@ async fn persist(
             created: false,
         });
     }
-    let body = json!({ field: recipient, "badge": badge });
+    // Astroloutre shows a badge as owned only when date_received is set.
+    let body = json!({
+        field: recipient,
+        "badge": badge,
+        "date_received": chrono::Utc::now().format("%Y-%m-%d %H:%M:%S%.3fZ").to_string(),
+    });
     if let Err(error) = pb
         .create_record(DISCORD_USER_BADGES_COLLECTION, &body)
         .await
