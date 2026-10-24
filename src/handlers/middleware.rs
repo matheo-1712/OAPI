@@ -191,9 +191,35 @@ pub async fn require_auth(
 /// Any other route keeps rejecting `rom_` tokens (they never match the service key).
 pub async fn require_friends_reader(
     jar: CookieJar,
-    mut request: Request,
+    request: Request,
     next: Next,
 ) -> Result<Response, (StatusCode, String)> {
+    friends_reader_with(
+        jar,
+        request,
+        next,
+        &crate::config::Config::global().auth.service_api_key,
+        |token| async move {
+            let mut pb = crate::utils::pocketbase::PocketbaseClient::new();
+            pb.login().await?;
+            crate::actions::rom_auth_actions::claims_for_token(&pb, &token).await
+        },
+    )
+    .await
+}
+
+/// `require_friends_reader` with an injectable "full `rom_` token -> claims" lookup.
+async fn friends_reader_with<F, Fut>(
+    jar: CookieJar,
+    mut request: Request,
+    next: Next,
+    service_key: &str,
+    resolve: F,
+) -> Result<Response, (StatusCode, String)>
+where
+    F: FnOnce(String) -> Fut,
+    Fut: std::future::Future<Output = Result<Option<crate::models::JwtClaims>, String>>,
+{
     let mut values = request
         .headers()
         .get_all(axum::http::header::AUTHORIZATION)
@@ -214,12 +240,7 @@ pub async fn require_friends_reader(
                 "Unauthorized. Please log in.".to_string(),
             ));
         };
-        let mut pb = crate::utils::pocketbase::PocketbaseClient::new();
-        let claims = match pb.login().await {
-            Ok(()) => crate::actions::rom_auth_actions::claims_for_token(&pb, &token).await,
-            Err(error) => Err(error),
-        };
-        return match claims {
+        return match resolve(token).await {
             Ok(Some(claims)) => {
                 request.extensions_mut().insert(claims);
                 Ok(next.run(request).await)
@@ -237,14 +258,7 @@ pub async fn require_friends_reader(
             }
         };
     }
-    verify_and_check_role(
-        jar,
-        request,
-        next,
-        &[],
-        &crate::config::Config::global().auth.service_api_key,
-    )
-    .await
+    verify_and_check_role(jar, request, next, &[], service_key).await
 }
 
 /// Middleware to require LoutreInvesti or Admin accreditation
@@ -336,6 +350,67 @@ mod activity_tests {
                     .await
                     .unwrap();
                 assert_eq!(response.status(), status);
+            }
+        }
+    }
+
+    #[tokio::test]
+    async fn rom_tokens_resolve_to_normal_claims_or_fail_closed() {
+        use crate::models::JwtClaims;
+        let token = format!("rom_{}", "a".repeat(64));
+        let app = axum::Router::new()
+            .route(
+                "/friends/me",
+                axum::routing::get(
+                    |axum::Extension(claims): axum::Extension<JwtClaims>| async move {
+                        format!("{}:{:?}", claims.sub, claims.role)
+                    },
+                ),
+            )
+            .layer(axum::middleware::from_fn(
+                |jar: CookieJar, request: Request, next: Next| async move {
+                    let outcome = request.headers()["x-outcome"].to_str().unwrap().to_owned();
+                    friends_reader_with(jar, request, next, TEST_KEY, move |token| async move {
+                        assert_eq!(token, format!("rom_{}", "a".repeat(64)));
+                        match outcome.as_str() {
+                            "valid" => Ok(Some(JwtClaims {
+                                sub: "123".into(),
+                                username: "Loutre".into(),
+                                role: Role::Normal,
+                                exp: 0,
+                                iat: 0,
+                                profile: None,
+                            })),
+                            "unknown" => Ok(None),
+                            _ => Err("pocketbase down".into()),
+                        }
+                    })
+                    .await
+                },
+            ));
+        for (outcome, status) in [
+            ("valid", StatusCode::OK),
+            ("unknown", StatusCode::UNAUTHORIZED),
+            ("error", StatusCode::BAD_GATEWAY),
+        ] {
+            let response = app
+                .clone()
+                .oneshot(
+                    HttpRequest::builder()
+                        .uri("/friends/me")
+                        .header("authorization", format!("Bearer {token}"))
+                        .header("x-outcome", outcome)
+                        .body(Body::empty())
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), status, "{outcome}");
+            if status == StatusCode::OK {
+                let body = axum::body::to_bytes(response.into_body(), 1024)
+                    .await
+                    .unwrap();
+                assert_eq!(&body[..], b"123:Normal");
             }
         }
     }

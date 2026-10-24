@@ -26,7 +26,6 @@ pub const LABEL_TOP_SERVERS: &str = "SERVEURS PRÉFÉRÉS";
 pub const DISCORD_USERS_COLLECTION: &str = "discord_users";
 pub const DISCORD_USER_STATS_COLLECTION: &str = "discord_user_stats";
 pub const DISCORD_FRIENDSHIPS_COLLECTION: &str = "discord_friendships";
-#[allow(dead_code)]
 pub const DISCORD_IDENTITY_TOKEN_COLLECTION: &str = "discord_identity_token";
 
 // ──────────────────────────────────────────────

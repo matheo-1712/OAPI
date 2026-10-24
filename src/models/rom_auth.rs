@@ -43,7 +43,6 @@ pub struct RomDeviceList {
 
 /// Raw PocketBase record.
 #[derive(Deserialize, Clone)]
-#[allow(dead_code)] // token/linking_code are read by the ROM auth middleware (next task)
 pub struct IdentityTokenRecord {
     pub id: String,
     #[serde(default)]
@@ -52,8 +51,6 @@ pub struct IdentityTokenRecord {
     pub label: String,
     #[serde(default)]
     pub token: String,
-    #[serde(default)]
-    pub linking_code: String,
     #[serde(default)]
     pub is_disabled: bool,
     #[serde(default)]

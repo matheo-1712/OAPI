@@ -55,17 +55,28 @@ pub fn parse_rom_bearer(value: &str) -> Option<&str> {
     ok.then_some(token)
 }
 
-/// Trims, removes control characters and truncates to 32 characters.
+/// Invisible Unicode format characters: zero-width, bidi embeddings/overrides/isolates, BOM.
+fn is_invisible_format(c: char) -> bool {
+    matches!(
+        c,
+        '\u{00AD}'
+            | '\u{061C}'
+            | '\u{200B}'..='\u{200F}'
+            | '\u{202A}'..='\u{202E}'
+            | '\u{2060}'..='\u{206F}'
+            | '\u{FEFF}'
+    )
+}
+
+/// Removes control and invisible format characters, truncates to 32 characters, then trims.
 pub fn sanitize_label(label: Option<&str>) -> String {
-    label
+    let cleaned: String = label
         .unwrap_or("")
         .chars()
-        .filter(|c| !c.is_control())
-        .collect::<String>()
-        .trim()
-        .chars()
-        .take(32)
-        .collect()
+        .filter(|&c| !c.is_control() && !is_invisible_format(c))
+        .collect();
+    let truncated: String = cleaned.trim().chars().take(32).collect();
+    truncated.trim_end().to_string()
 }
 
 #[derive(Debug)]
@@ -118,6 +129,7 @@ pub async fn create_code(
     let expires_at = (chrono::Utc::now() + chrono::Duration::minutes(CODE_TTL_MINUTES))
         .format(PB_DATE_FORMAT)
         .to_string();
+    let mut last_error = String::from("No free linking code");
     for _ in 0..5 {
         let code = generate_code();
         if find_record(pb, &format!("linking_code = '{code}'"))
@@ -126,7 +138,9 @@ pub async fn create_code(
         {
             continue;
         }
-        let created = pb
+        // A rejected create is most likely a concurrent generation hitting the
+        // unique linking_code index: treat it as a collision and draw again.
+        let created = match pb
             .create_record(
                 DISCORD_IDENTITY_TOKEN_COLLECTION,
                 &json!({
@@ -138,7 +152,14 @@ pub async fn create_code(
                     "is_disabled": false,
                 }),
             )
-            .await?;
+            .await
+        {
+            Ok(created) => created,
+            Err(error) => {
+                last_error = error;
+                continue;
+            }
+        };
         let device_id = created
             .get("id")
             .and_then(|id| id.as_str())
@@ -150,7 +171,7 @@ pub async fn create_code(
             device_id,
         });
     }
-    Err(RomAuthError::Upstream("No free linking code".into()))
+    Err(RomAuthError::Upstream(last_error))
 }
 
 /// Exchanges a valid pending code for a `rom_` token; only its hash is stored.
@@ -178,6 +199,12 @@ pub async fn exchange_code(
         }),
     )
     .await?;
+    // Two concurrent exchanges of the same code can both pass the lookup above;
+    // only the hash that ended up stored is valid, so the losing caller gets an error.
+    let stored = find_record(pb, &format!("id = '{}'", record.id)).await?;
+    if stored.is_none_or(|stored| stored.token != hash_token(&token)) {
+        return Err(RomAuthError::NotFound("Code inconnu ou expiré."));
+    }
     Ok(RomTokenResponse {
         token,
         device_id: record.id,
@@ -331,6 +358,15 @@ mod tests {
         assert_eq!(sanitize_label(Some("  Console salon  ")), "Console salon");
         assert_eq!(sanitize_label(Some("a\nb\u{7}c")), "abc");
         assert_eq!(sanitize_label(Some(&"é".repeat(40))).chars().count(), 32);
+        assert_eq!(
+            sanitize_label(Some(&format!("{} b", "a".repeat(31)))),
+            "a".repeat(31)
+        );
+        assert_eq!(
+            sanitize_label(Some("\u{202E}Con\u{200B}sole\u{2066}\u{FEFF}")),
+            "Console"
+        );
+        assert_eq!(sanitize_label(Some(" \u{200F} ")), "");
     }
 
     use mockito::{Matcher, Server};
@@ -456,9 +492,24 @@ mod tests {
             .expect(1)
             .create_async()
             .await;
+        let stored = body.clone();
+        let read_back = server
+            .mock("GET", COL)
+            .match_query(Matcher::UrlEncoded("filter".into(), "id = 'dev1'".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body_from_request(move |_| {
+                let sent: serde_json::Value =
+                    serde_json::from_str(&stored.lock().unwrap()).unwrap();
+                page(json!([{"id":"dev1","token":sent["token"]}])).into_bytes()
+            })
+            .expect(1)
+            .create_async()
+            .await;
         let pb = PocketbaseClient::for_test(server.url(), "t");
         let r = exchange_code(&pb, "123456").await.ok().unwrap();
         patch.assert_async().await;
+        read_back.assert_async().await;
         let sent: serde_json::Value = serde_json::from_str(&body.lock().unwrap()).unwrap();
         let stored = sent["token"].as_str().unwrap();
         assert_eq!(stored.len(), 64);
@@ -467,6 +518,95 @@ mod tests {
         assert_eq!(sent["linking_code"], "");
         assert_eq!(r.device_id, "dev1");
         assert_eq!(r.label, "PC");
+    }
+
+    #[tokio::test]
+    async fn exchange_losing_a_race_returns_not_found() {
+        let mut server = Server::new_async().await;
+        list_mock(
+            &mut server,
+            COL,
+            "linking_code = '123456' && token = '' && linking_code_expires_at > @now",
+            json!([{"id":"dev1","label":"PC"}]),
+        )
+        .await;
+        server
+            .mock("PATCH", format!("{COL}/dev1").as_str())
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"id":"dev1"}).to_string())
+            .create_async()
+            .await;
+        let read_back = list_mock(
+            &mut server,
+            COL,
+            "id = 'dev1'",
+            json!([{"id":"dev1","token":hash_token(&generate_token())}]),
+        )
+        .await;
+        let pb = PocketbaseClient::for_test(server.url(), "t");
+        assert!(matches!(
+            exchange_code(&pb, "123456").await,
+            Err(RomAuthError::NotFound(_))
+        ));
+        read_back.assert_async().await;
+    }
+
+    async fn create_code_server(
+        failures: usize,
+    ) -> (mockito::ServerGuard, mockito::Mock, mockito::Mock) {
+        let mut server = Server::new_async().await;
+        list_mock(
+            &mut server,
+            COL,
+            "token = '' && (discord_user = 'acc' || linking_code_expires_at < @now)",
+            json!([]),
+        )
+        .await;
+        server
+            .mock("GET", COL)
+            .match_query(Matcher::Regex("filter=linking_code".into()))
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(page(json!([])))
+            .create_async()
+            .await;
+        // mockito serves the first matching mock still missing hits, so the
+        // rejected creates are answered before the successful one.
+        let rejected = server
+            .mock("POST", COL)
+            .with_status(400)
+            .expect(failures)
+            .create_async()
+            .await;
+        let accepted = server
+            .mock("POST", COL)
+            .with_status(200)
+            .with_header("content-type", "application/json")
+            .with_body(json!({"id":"new"}).to_string())
+            .expect(usize::from(failures < 5))
+            .create_async()
+            .await;
+        (server, rejected, accepted)
+    }
+
+    #[tokio::test]
+    async fn create_code_retries_rejected_creates_as_collisions() {
+        let (server, rejected, accepted) = create_code_server(2).await;
+        let pb = PocketbaseClient::for_test(server.url(), "t");
+        let r = create_code(&pb, "acc", "PC").await.ok().unwrap();
+        assert_eq!(r.device_id, "new");
+        rejected.assert_async().await;
+        accepted.assert_async().await;
+
+        let (server, rejected, accepted) = create_code_server(5).await;
+        let pb = PocketbaseClient::for_test(server.url(), "t");
+        assert!(matches!(
+            create_code(&pb, "acc", "PC").await,
+            Err(RomAuthError::Upstream(_))
+        ));
+        rejected.assert_async().await;
+        accepted.assert_async().await;
     }
 
     #[tokio::test]
