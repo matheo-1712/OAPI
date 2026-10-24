@@ -63,3 +63,20 @@ badges:
   - id: "n69u186idwe7c8j" # Bienvenue sur Palworld
     kind: player
     rule: { stat: palworld_joined, minimum: 1 }
+
+  # nb_catch_pal : total des Pals capturés, lu dans palworld_stats.
+  - id: "a64ps3g5a15h20g" # Capture I
+    kind: player
+    rule: { stat: nb_catch_pal, minimum: 1000 }
+  - id: "207478b1f1n7fx4" # Capture II
+    kind: player
+    rule: { stat: nb_catch_pal, minimum: 2500 }
+  - id: "nzwftpwl1o7r86x" # Capture III
+    kind: player
+    rule: { stat: nb_catch_pal, minimum: 5000 }
+  - id: "48u9f69i1hnr3uy" # Capture IV
+    kind: player
+    rule: { stat: nb_catch_pal, minimum: 7500 }
+  - id: "vv5705ft60u5wt0" # Capture V
+    kind: player
+    rule: { stat: nb_catch_pal, minimum: 10000 }

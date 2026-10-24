@@ -429,6 +429,7 @@ fn qualifies(rule: &Rule, stats: &[Value]) -> Result<bool, String> {
             | "voice_joined"
             | "membership"
             | "palworld_joined"
+            | "nb_catch_pal"
     );
     let map = matches!(field, "mobs_killed" | "items_crafted" | "items_broken");
     if parts.next().is_some()
@@ -580,6 +581,7 @@ async fn evaluate_with_definitions(
             )
             .await?;
         stats.push(json!({"palworld_joined": u8::from(!palworld.is_empty())}));
+        stats.extend(palworld);
     }
     let badges = pb.list_all_records::<Value>(BADGES_COLLECTION, "").await?;
     // Validate every rule before beginning writes.
@@ -712,6 +714,11 @@ mod tests {
                 RecipientKind::DiscordUser,
                 "message_count",
                 vec![100.0, 1000.0, 3000.0, 8000.0, 15000.0],
+            ),
+            (
+                RecipientKind::Player,
+                "nb_catch_pal",
+                vec![1000.0, 2500.0, 5000.0, 7500.0, 10000.0],
             ),
         ] {
             let rules: Vec<_> = definitions
