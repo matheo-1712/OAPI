@@ -49,6 +49,8 @@ Router::new()
     .route_layer(axum::middleware::from_fn(middleware::require_admin))
 ```
 
+Un jeu (ROM) peut aussi s'authentifier avec un token `rom_…` obtenu en liant un code à 6 chiffres à un compte Discord. Ce token n'ouvre que la lecture de la liste d'amis (`GET /friends/{account}`, via `require_friends_reader`) ; voir [rom_auth.md](rom_auth.md).
+
 ## 4. Bouton d'Arrêt d'Urgence (Kill-Switch)
 Si vous soupçonnez que des cookies ou clés ont été compromis, vous pouvez déconnecter instantanément tous les utilisateurs actifs en modifiant la variable `JWT_SECRET` dans le fichier `.env` et en redémarrant le serveur. Les JWT étant sans état, modifier la clé de signature invalide immédiatement tous les jetons émis précédemment.
 

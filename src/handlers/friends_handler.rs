@@ -40,6 +40,9 @@ async fn session(
     Ok((pb, account))
 }
 
+/// Lists the account's friendships.
+///
+/// Also accepts `Authorization: Bearer rom_...` (ROM token): read-only, own account only.
 #[utoipa::path(get, path = "/friends/{account}", tag = "Friends",
     params(("account" = String, Path, description = "`me` (session only) or a PocketBase discord_users record ID")),
     responses((status = 200, body = FriendList), (status = 400, description = "Invalid ID or service used /me"), (status = 401, description = "Authentication required"), (status = 403, description = "Account belongs to another user"), (status = 404, description = "Account not found"), (status = 502, description = "Friends unavailable")))]

@@ -10,6 +10,7 @@ Une requête doit présenter **l'une** de ces identités, sinon `401` :
 |---|---|---|
 | Session OAPI | Cookie `auth_token` (connexion Discord via `/auth/login` ou `/auth/site/login`) | Utilisateur connecté, portail ou site Astroloutre |
 | Token de service | `Authorization: Bearer <OAPI_SERVICE_API_KEY>` | Bot, serveur Astro |
+| Token ROM | `Authorization: Bearer rom_<64 hex>` | Jeu lié à un compte Discord. **Uniquement `GET /friends/{account}`**, lecture seule, sur son propre compte (voir [rom_auth.md](rom_auth.md)) ; `401` sur toute autre route |
 
 Règles :
 
