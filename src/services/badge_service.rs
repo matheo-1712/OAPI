@@ -1,3 +1,4 @@
+use crate::services::scheduler::TaskSummary;
 use crate::utils::{constants::*, pocketbase::PocketbaseClient};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -157,7 +158,7 @@ pub async fn refresh_mine(
     Ok(response)
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct Rule {
     stat: String,
@@ -166,7 +167,7 @@ struct Rule {
     server: Option<String>,
 }
 
-#[derive(Deserialize)]
+#[derive(Deserialize, Clone)]
 #[serde(deny_unknown_fields)]
 struct BadgeDefinition {
     #[serde(default)]
@@ -594,6 +595,53 @@ async fn evaluate_with_definitions(
     Ok(results)
 }
 
+/// Re-evaluates the badges of every Discord user, then every Minecraft player.
+///
+/// Returns `Err` only if `badges.yaml` is invalid or an account list cannot be read;
+/// per-account failures are reported in [`TaskSummary::failed`]. No notification is sent.
+#[allow(dead_code)] // used by the background loop (added later)
+pub async fn refresh_all(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
+    refresh_all_with_definitions(pb, catalogue()?).await
+}
+
+async fn refresh_all_with_definitions(
+    pb: &PocketbaseClient,
+    definitions: Vec<BadgeDefinition>,
+) -> Result<TaskSummary, String> {
+    let discord = pb
+        .list_all_records::<Value>(DISCORD_USERS_COLLECTION, "")
+        .await?;
+    let players = pb
+        .list_all_records::<Value>(MINECRAFT_PLAYERS_COLLECTION, "")
+        .await?;
+    let accounts = discord
+        .iter()
+        .map(|record| (record, RecipientKind::DiscordUser))
+        .chain(players.iter().map(|record| (record, RecipientKind::Player)));
+    let mut summary = TaskSummary::default();
+    let mut created = 0usize;
+    for (record, kind) in accounts {
+        summary.processed += 1;
+        let id = record["id"].as_str().unwrap_or_default();
+        match evaluate_with_definitions(pb, id, kind, definitions.clone()).await {
+            Ok(results) => {
+                summary.succeeded += 1;
+                created += results.iter().filter(|r| r.created).count();
+            }
+            Err(_) => {
+                tracing::warn!("Badge refresh failed for record {id}");
+                summary.failed.push(id.to_string());
+            }
+        }
+    }
+    tracing::info!(
+        "Badge refresh: {} accounts, {} failed, {created} badges created",
+        summary.processed,
+        summary.failed.len()
+    );
+    Ok(summary)
+}
+
 #[cfg(test)]
 pub(crate) async fn evaluate_discord_fixture(
     pb: &PocketbaseClient,
@@ -736,5 +784,75 @@ mod tests {
         rule.stat = "deaths".into();
         rule.minimum = -1.0;
         assert!(qualifies(&rule, &stats).is_err());
+    }
+
+    fn page(items: Value) -> String {
+        let n = items.as_array().map_or(0, |a| a.len());
+        json!({"page":1,"perPage":500,"totalPages":1,"totalItems":n,"items":items}).to_string()
+    }
+
+    #[tokio::test]
+    async fn refresh_all_continues_after_account_failure() {
+        use mockito::{Matcher, Server};
+        const UUID: &str = "0123456789abcdef0123456789abcdef";
+        let mut server = Server::new_async().await;
+        let mut list = |path: &'static str, filter: Option<&str>, items: Value| {
+            let mock = server.mock("GET", path).match_query(match filter {
+                Some(f) => Matcher::UrlEncoded("filter".into(), f.into()),
+                None => Matcher::Any,
+            });
+            mock.with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(page(items))
+                .expect(1)
+                .create()
+        };
+        // `find` is a filtered list; specific filters are registered before the catch-all lists.
+        let mocks = vec![
+            list(
+                "/api/collections/discord_users/records",
+                Some("id = 'd1'"),
+                json!([{"id":"d1"}]),
+            ),
+            list(
+                "/api/collections/players/records",
+                Some("id = 'p1'"),
+                json!([{"id":"p1","account_id":UUID}]),
+            ),
+            list(
+                "/api/collections/discord_users/records",
+                None,
+                json!([{"id":"d1"}]),
+            ),
+            list("/api/collections/players/records", None, json!([{"id":"p1"}])),
+        ];
+        let mut mocks = mocks;
+        mocks.push(
+            server
+                .mock("GET", "/api/collections/badges_earned/records")
+                .match_query(Matcher::UrlEncoded(
+                    "filter".into(),
+                    format!("player = 'p1' || player = '{UUID}'"),
+                ))
+                .with_status(200)
+                .with_header("content-type", "application/json")
+                .with_body(page(json!([])))
+                .expect(1)
+                .create_async()
+                .await,
+        );
+        let pb = PocketbaseClient::for_test(server.url(), "token");
+        let summary = refresh_all_with_definitions(&pb, vec![]).await.unwrap();
+        assert_eq!(
+            summary,
+            TaskSummary {
+                processed: 2,
+                succeeded: 1,
+                failed: vec!["d1".into()],
+            }
+        );
+        for mock in mocks {
+            mock.assert_async().await;
+        }
     }
 }
