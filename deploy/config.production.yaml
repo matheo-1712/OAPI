@@ -8,3 +8,4 @@ site_auth:
   url: "https://antredesloutres.fr"
   extra_urls:
     - "https://rom-patcher.antredesloutres.fr"
+    - "https://qa.antredesloutres.fr"
