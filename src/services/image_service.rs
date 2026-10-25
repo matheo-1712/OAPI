@@ -32,6 +32,9 @@ const COLOR_INNER_BADGE: [u8; 4] = [30, 31, 34, 255];
 const COLOR_SEPARATOR: [u8; 4] = [40, 41, 45, 255];
 
 const FONT_DATA: &[u8] = include_bytes!("../../public/font/ARIAL.TTF");
+/// Parsed once for every generated image.
+static FONT: std::sync::LazyLock<Font<'static>> =
+    std::sync::LazyLock::new(|| Font::try_from_bytes(FONT_DATA).expect("Error loading FONT"));
 
 struct Rect {
     x: u32,
@@ -149,7 +152,8 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         return Err("Invalid player UUID in database".into());
     }
     let user_dir = Path::new(paths::MINECRAFT_SUMMARY_DIR).join(&player.account_id);
-    fs::create_dir_all(&user_dir)
+    tokio::fs::create_dir_all(&user_dir)
+        .await
         .map_err(|e| format!("Unable to create image directory: {}", e))?;
 
     let player_hash = calculate_minecraft_hash(&player)?;
@@ -160,7 +164,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         player.account_id, file_name
     );
 
-    if file_path.exists() {
+    if tokio::fs::try_exists(&file_path).await.unwrap_or(false) {
         return Ok(ImageResponse { url: public_url });
     }
 
@@ -189,7 +193,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         }
     }
 
-    let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
+    let font: &Font = &FONT;
 
     // --- DRAW AVATAR (MINECRAFT HEAD) ---
     let avatar_url = minecraft_avatar_url(&player, &crate::config::Config::global().auth.pb_url);
@@ -209,7 +213,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     let pseudo_truncated = formatters::truncate_text(&player.playername, 15);
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &pseudo_truncated,
         150,
         280,
@@ -218,7 +222,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     );
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &player.account_id,
         150,
         325,
@@ -229,7 +233,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     let formatted_join = formatters::format_discord_date(&player.first_connected_at);
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         LABEL_MEMBER_SINCE,
         150,
         380,
@@ -238,7 +242,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     );
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &formatted_join,
         150,
         405,
@@ -310,7 +314,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_PLAYTIME,
         &formatters::format_minecraft_playtime(total_playtime_secs),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -322,7 +326,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_TOTAL_DISTANCE,
         &formatters::format_minecraft_distance(total_distance),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -334,7 +338,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_BLOCKS_MINED,
         &format!("{ } blocs", formatters::format_number(total_blocks_mined)),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -346,7 +350,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_BLOCKS_PLACED,
         &format!("{ } blocs", formatters::format_number(total_blocks_placed)),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -358,7 +362,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_MOB_KILLS,
         &formatters::format_number(total_mob_kills),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -370,7 +374,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
         },
         LABEL_DEATHS,
         &formatters::format_number(total_deaths),
-        &font,
+        font,
     );
 
     // --- TOP SERVERS ---
@@ -386,7 +390,7 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     let servers_label_y = grid_y + 300 + card_h + 30;
     draw_text_rgba(
         &mut img,
-        &font,
+        font,
         LABEL_TOP_SERVERS,
         grid_x as i32,
         servers_label_y as i32,
@@ -426,11 +430,11 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
             ry += 45;
         }
 
-        let w = draw_pill_high_fidelity(&mut img, rx, ry, &pill_text, &font, color);
+        let w = draw_pill_high_fidelity(&mut img, rx, ry, &pill_text, font, color);
         rx += w + 12;
     }
 
-    persist_image(&img, &file_path)?;
+    persist_in_background(img, file_path).await?;
     Ok(ImageResponse { url: public_url })
 }
 
@@ -443,7 +447,8 @@ pub async fn generate_discord_profile(
         return Err("Invalid Discord ID in database".into());
     }
     let user_dir = Path::new(paths::DISCORD_SUMMARY_DIR).join(&user.discord_id);
-    fs::create_dir_all(&user_dir)
+    tokio::fs::create_dir_all(&user_dir)
+        .await
         .map_err(|e| format!("Unable to create image directory: {}", e))?;
 
     let mut hash_activity = activity.clone();
@@ -467,7 +472,7 @@ pub async fn generate_discord_profile(
         user.discord_id, file_name
     );
 
-    if file_path.exists() {
+    if tokio::fs::try_exists(&file_path).await.unwrap_or(false) {
         return Ok(ImageResponse { url: public_url });
     }
 
@@ -496,7 +501,7 @@ pub async fn generate_discord_profile(
         }
     }
 
-    let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
+    let font: &Font = &FONT;
 
     if let Some(avatar_url) = user.avatar_url {
         let avatar_result = crate::utils::image_assets::download(&avatar_url).await;
@@ -582,7 +587,7 @@ pub async fn generate_discord_profile(
     let pseudo_truncated = formatters::truncate_text(&user.username, 15);
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &pseudo_truncated,
         150,
         280,
@@ -591,7 +596,7 @@ pub async fn generate_discord_profile(
     );
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &user.discord_tag,
         150,
         325,
@@ -602,7 +607,7 @@ pub async fn generate_discord_profile(
     let formatted_join = formatters::format_discord_date(&user.joined_at);
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         LABEL_MEMBER_SINCE,
         150,
         380,
@@ -611,7 +616,7 @@ pub async fn generate_discord_profile(
     );
     draw_text_centered_rgba(
         &mut img,
-        &font,
+        font,
         &formatted_join,
         150,
         405,
@@ -661,7 +666,7 @@ pub async fn generate_discord_profile(
         },
         LABEL_MESSAGES,
         &formatters::format_number(total_messages),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -673,7 +678,7 @@ pub async fn generate_discord_profile(
         },
         LABEL_VOCAL_TIME,
         &formatters::format_vocal_time(total_vocal_decimal),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -685,7 +690,7 @@ pub async fn generate_discord_profile(
         },
         LABEL_COMPANION,
         &formatters::truncate_text(&top_companion, 20),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -697,7 +702,7 @@ pub async fn generate_discord_profile(
         },
         LABEL_TEXT_CHANNEL,
         &formatters::truncate_text(&top_text, 15),
-        &font,
+        font,
     );
     draw_stat_card(
         &mut img,
@@ -709,13 +714,13 @@ pub async fn generate_discord_profile(
         },
         LABEL_VOICE_CHANNEL,
         &formatters::truncate_text(&top_voice, 40),
-        &font,
+        font,
     );
 
     let roles_label_y = grid_y + 300 + card_h + 30;
     draw_text_rgba(
         &mut img,
-        &font,
+        font,
         LABEL_ROLES_TITLE,
         grid_x as i32,
         roles_label_y as i32,
@@ -727,7 +732,7 @@ pub async fn generate_discord_profile(
     let mut ry = roles_label_y as i32 + 35;
     for role in filtered_roles {
         let color = parse_hex_color(&role.color);
-        let w = draw_pill_high_fidelity(&mut img, rx, ry, &role.name, &font, color);
+        let w = draw_pill_high_fidelity(&mut img, rx, ry, &role.name, font, color);
         rx += w + 12;
         if rx > CARD_WIDTH as i32 - 150 {
             rx = grid_x as i32;
@@ -735,7 +740,7 @@ pub async fn generate_discord_profile(
         }
     }
 
-    persist_image(&img, &file_path)?;
+    persist_in_background(img, file_path).await?;
     Ok(ImageResponse { url: public_url })
 }
 
@@ -752,6 +757,16 @@ pub fn valid_uuid(uuid: &str) -> bool {
                 && [8, 13, 18, 23]
                     .iter()
                     .all(|&index| uuid.as_bytes()[index] == b'-')))
+}
+
+/// PNG encoding and the fsync are CPU and disk bound: run them off the async workers.
+async fn persist_in_background(
+    img: RgbaImage,
+    file_path: std::path::PathBuf,
+) -> Result<(), String> {
+    tokio::task::spawn_blocking(move || persist_image(&img, &file_path))
+        .await
+        .map_err(|e| format!("Image publication task failed: {}", e))?
 }
 
 /// Publish only complete PNGs. Keep earlier versions available for existing links.

@@ -81,7 +81,12 @@ async fn purge_account(
         )
         .await?;
     }
-    pb.delete_record(DISCORD_USERS_COLLECTION, record).await
+    pb.delete_record(DISCORD_USERS_COLLECTION, record).await?;
+    // Summary images show the member's Discord profile and statistics.
+    if let Some(snowflake) = snowflake {
+        crate::services::image_cleanup::remove_discord_images(snowflake).await;
+    }
+    Ok(())
 }
 
 /// Purges all accounts whose `delete_at` is set and already past.
