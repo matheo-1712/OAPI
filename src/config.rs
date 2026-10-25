@@ -155,8 +155,9 @@ pub struct ServerConfig {
     /// Port to bind the server to.
     pub port: u16,
     /// Only these direct peers may supply X-Forwarded-For for client identification.
-    #[serde(default)]
-    pub trusted_proxies: Vec<std::net::IpAddr>,
+    /// Each entry is an exact IP (`127.0.0.1`) or a CIDR range (`172.16.0.0/12`).
+    #[serde(default, deserialize_with = "deserialize_networks")]
+    pub trusted_proxies: Vec<ipnet::IpNet>,
     /// Internal API route paths.
     pub routes: InternalRoutes,
 }
@@ -175,6 +176,28 @@ pub struct InternalRoutes {
 }
 
 pub static CONFIG: OnceLock<Config> = OnceLock::new();
+
+/// Reads `trusted_proxies` entries: an exact IP becomes a single-address network.
+fn deserialize_networks<'de, D>(deserializer: D) -> Result<Vec<ipnet::IpNet>, D::Error>
+where
+    D: serde::Deserializer<'de>,
+{
+    Vec::<String>::deserialize(deserializer)?
+        .iter()
+        .map(|entry| {
+            let entry = entry.trim();
+            entry
+                .parse::<ipnet::IpNet>()
+                .or_else(|_| entry.parse::<std::net::IpAddr>().map(ipnet::IpNet::from))
+                .map(|net| net.trunc())
+                .map_err(|_| {
+                    serde::de::Error::custom(format!(
+                        "invalid trusted_proxies entry {entry:?}: expected an IP or CIDR range"
+                    ))
+                })
+        })
+        .collect()
+}
 
 /// An http(s) origin without path, with any trailing slash removed.
 fn parse_origin(url: &str) -> Option<&str> {
@@ -392,6 +415,40 @@ pub fn init() {
 mod tests {
     use super::*;
     use std::fs;
+
+    #[test]
+    fn trusted_proxies_accept_exact_ips_and_cidr_ranges() {
+        #[derive(Deserialize)]
+        struct Proxies {
+            #[serde(deserialize_with = "deserialize_networks")]
+            trusted_proxies: Vec<ipnet::IpNet>,
+        }
+        let parsed: Proxies = serde_json::from_str(
+            r#"{"trusted_proxies":["127.0.0.1","172.18.0.7/12","::1"]}"#,
+        )
+        .unwrap();
+        let rendered: Vec<String> = parsed
+            .trusted_proxies
+            .iter()
+            .map(ToString::to_string)
+            .collect();
+        assert_eq!(rendered, ["127.0.0.1/32", "172.16.0.0/12", "::1/128"]);
+        assert!(
+            serde_json::from_str::<Proxies>(r#"{"trusted_proxies":["proxy.local"]}"#).is_err()
+        );
+        let production = Config::load_from(
+            "default_config.yaml",
+            Some("deploy/config.production.yaml"),
+        )
+        .unwrap();
+        assert!(
+            production
+                .server
+                .trusted_proxies
+                .iter()
+                .any(|net| net.contains(&"172.18.0.2".parse::<std::net::IpAddr>().unwrap()))
+        );
+    }
 
     #[test]
     fn scheduler_defaults_and_rejects_invalid_time() {

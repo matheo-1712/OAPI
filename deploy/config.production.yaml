@@ -2,7 +2,9 @@ server:
   env: production
   host: "0.0.0.0"
   port: 9003
-  trusted_proxies: []
+  # The TLS reverse proxy runs in a Docker container: trust Docker's default bridge
+  # networks to supply X-Forwarded-For. Narrow this to the proxy's network if known.
+  trusted_proxies: ["172.16.0.0/12"]
 
 site_auth:
   url: "https://antredesloutres.fr"

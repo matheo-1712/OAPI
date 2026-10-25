@@ -2,7 +2,7 @@ server:
   env: "development"
   host: "127.0.0.1"
   port: 3000
-  trusted_proxies: [] # Exact proxy IPs allowed to supply X-Forwarded-For
+  trusted_proxies: [] # Proxy IPs or CIDR ranges allowed to supply X-Forwarded-For
   routes:
     base: "/api"
     generate_image: "/images"
