@@ -55,6 +55,6 @@ Regroupe les accès PocketBase chargés via l'environnement.
 
 ### `scheduler`
 Planifie les [tâches quotidiennes](./daily_tasks.md) (purge des comptes Discord, badges, skins Minecraft).
-- `enabled` : active les tâches quotidiennes (`true` par défaut), lancées une fois au démarrage puis chaque jour à `run_at`. Hors `production`, un avertissement est loggé au démarrage car la purge agit sur le PocketBase configuré, les skins y sont aussi écrits et Mojang est appelé.
+- `enabled` : active les tâches quotidiennes (`false` dans `default_config.yaml`, `true` dans `deploy/config.production.yaml`), lancées une fois au démarrage puis chaque jour à `run_at`. Hors `production`, un avertissement est loggé au démarrage car la purge agit sur le PocketBase configuré, les skins y sont aussi écrits et Mojang est appelé.
 - `run_at` : heure d'exécution au format `HH:MM`, heure de Paris (`"04:00"` par défaut). Une valeur invalide bloque le démarrage.
 La purge exige un champ `delete_at` de type `date` (revérifié par OAPI) et ne supprime rien au-delà de 100 comptes par passage (voir [tâches quotidiennes](./daily_tasks.md)).

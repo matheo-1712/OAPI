@@ -80,9 +80,9 @@ cargo run
 The server listens on `http://127.0.0.1:3000` by default.
 
 > [!WARNING]
-> Daily tasks run at startup, including the purge of Discord accounts on the configured
-> PocketBase. When working against a shared database, set `scheduler.enabled: false` in
-> `config.yaml`. See [docs/daily_tasks.md](docs/daily_tasks.md).
+> Daily tasks are disabled by default and enabled in production by
+> `deploy/config.production.yaml`. When enabled, they run at startup, including the purge of
+> Discord accounts on the configured PocketBase. See [docs/daily_tasks.md](docs/daily_tasks.md).
 
 ## Configuration
 

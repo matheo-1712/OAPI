@@ -9,3 +9,7 @@ site_auth:
   extra_urls:
     - "https://rom-patcher.antredesloutres.fr"
     - "https://qa.antredesloutres.fr"
+
+# Daily maintenance tasks, disabled by default in default_config.yaml
+scheduler:
+  enabled: true

@@ -13,8 +13,9 @@ Une tâche en échec n'empêche pas la suivante de s'exécuter.
 Les tâches se lancent une première fois au démarrage d'OAPI, puis une fois par jour à
 l'heure `scheduler.run_at` (format `HH:MM`, heure de Paris, `04:00` par défaut). Le
 passage du démarrage se fait en arrière-plan : le serveur HTTP répond pendant ce temps.
-Les deux passages ne se chevauchent jamais. Le bloc `scheduler` se règle dans `config.yaml`
-(voir [configuration](./configuration.md)) :
+Les deux passages ne se chevauchent jamais. Le scheduler est désactivé dans
+`default_config.yaml` et activé en production par `deploy/config.production.yaml`. Le bloc
+`scheduler` se règle dans `config.yaml` (voir [configuration](./configuration.md)) :
 
 ```yaml
 scheduler:
@@ -28,8 +29,8 @@ startup`, puis, après chaque passage, la prochaine exécution : `Next daily tas
 
 Si le scheduler est activé alors que `server.env` n'est pas `production`, OAPI logge un
 avertissement au démarrage : la purge s'exécutera tout de suite, puis chaque jour, sur le
-PocketBase configuré. Chaque `cargo run` en local lance donc une purge. Mettre
-`scheduler.enabled: false` dans `config.yaml` pour la désactiver.
+PocketBase configuré. Avec `scheduler.enabled: true` dans un `config.yaml` local, chaque
+`cargo run` lance donc une purge.
 
 ## Purge des comptes Discord
 

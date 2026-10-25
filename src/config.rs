@@ -395,9 +395,9 @@ mod tests {
 
     #[test]
     fn scheduler_defaults_and_rejects_invalid_time() {
-        let mut config = Config::load().unwrap();
+        let mut config = Config::load_from("default_config.yaml", None).unwrap();
         config.auth.jwt_secret = "test-only-secret-at-least-32-bytes-long".into();
-        assert!(config.scheduler.enabled);
+        assert!(!config.scheduler.enabled);
         assert_eq!(
             config.scheduler.run_time().unwrap(),
             NaiveTime::from_hms_opt(4, 0, 0).unwrap()
@@ -406,6 +406,18 @@ mod tests {
             config.scheduler.run_at = invalid.into();
             assert!(config.validate_security().is_err(), "{invalid}");
         }
+    }
+
+    #[test]
+    fn production_config_enables_the_scheduler() {
+        let config =
+            Config::load_from("default_config.yaml", Some("deploy/config.production.yaml"))
+                .unwrap();
+        assert!(config.scheduler.enabled);
+        assert_eq!(
+            config.scheduler.run_time().unwrap(),
+            NaiveTime::from_hms_opt(4, 0, 0).unwrap()
+        );
     }
 
     #[test]
