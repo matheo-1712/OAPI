@@ -90,6 +90,14 @@ régénère tous les joueurs au premier passage de la tâche.
 sous un nouveau nom et supprime les anciens. Le site statique Astroloutre affiche donc une
 image de tête ou de skin cassée pour ce joueur jusqu'à son prochain build.
 
+**Ordre de déploiement du passage à `v2`.** Déployer OAPI d'abord et laisser un passage
+complet de la tâche `skins` se terminer (1,5 s par joueur, arrêt sur un `429` Mojang puis
+reprise le lendemain : cela peut donc dépasser une journée). Ensuite seulement, builder et
+déployer le site. Sinon, chaque tête du site en ligne pointe vers des fichiers supprimés et
+retombe sur mc-heads jusqu'au prochain build. Tant que ce passage n'a pas eu lieu, le build du
+site logge `[skin3d] <joueur>: dimensions invalides (128x256)` pour chaque joueur : c'est
+attendu, ce n'est pas une régression.
+
 **Délai et limite Mojang.** Les requêtes à Mojang sont espacées de 1,5 s (`MOJANG_DELAY`
 dans `skin_service.rs`), et un UUID présent sur plusieurs records n'est interrogé qu'une
 fois. Si Mojang répond `429`, la tâche s'arrête, logge un avertissement et renvoie le
