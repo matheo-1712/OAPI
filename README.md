@@ -1,145 +1,205 @@
-# 🦦 OAPI — Otter API System
+# OAPI — Otter API
 
-[![CI/CD Pipeline](https://github.com/matheo-1712/OAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/matheo-1712/OAPI/actions)
-[![Rust](https://img.shields.io/badge/rust-v1.81+-orange.svg)](https://www.rust-lang.org)
-[![License](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
-[![Built with Axum](https://img.shields.io/badge/built%20with-Axum-blue)](https://github.com/tokio-rs/axum)
+[![Rust CI](https://github.com/matheo-1712/OAPI/actions/workflows/ci.yml/badge.svg)](https://github.com/matheo-1712/OAPI/actions/workflows/ci.yml)
+[![Rust](https://img.shields.io/badge/rust-1.85%2B%20(edition%202024)-orange.svg)](https://www.rust-lang.org)
+[![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 
-**OAPI** is a high-performance, asynchronous orchestration API built with Rust. It serves as the backbone logic for the *Antre des Loutres* community, handling complex image generation, real-time infrastructure monitoring, and external API integration.
+OAPI is the asynchronous Rust API (Axum + Tokio) behind the *Antre des Loutres* community.
+It generates Discord and Minecraft profile cards, monitors the community infrastructure,
+handles Discord authentication and exposes community data stored in PocketBase.
 
----
+## Table of contents
 
-## ✨ Core Features
+- [Features](#features)
+- [Architecture](#architecture)
+- [Prerequisites](#prerequisites)
+- [Getting started](#getting-started)
+- [Configuration](#configuration)
+- [Usage](#usage)
+- [Deployment](#deployment)
+- [Testing and quality](#testing-and-quality)
+- [Documentation](#documentation)
+- [Contributing](#contributing)
+- [License](#license)
 
-### 🎨 Dynamic Image Generation
-Generate high-fidelity profile summary cards for Discord and Minecraft.
-- **Smart Caching**: Uses SHA-256 state hashing to avoid redundant generation.
-- **Real-time Stats**: Aggregates messaging activity, voice time, and Minecraft gameplay (playtime, distance, blocks).
-- **Rich Aesthetics**: Custom font rendering, dynamic color pills, and automated avatar retrieval (Discord & Minecraft heads).
+## Features
 
-### 📊 Infrastructure Monitoring
-Real-time health tracking for the entire community ecosystem.
-- **Multi-protocol**: Supports HTTP(S) and Minecraft (TCP/SLP) status pings.
-- **Concurrent Checks**: All services are polled in parallel for sub-second response times.
-- **Live Dashboard**: A minimalist, modern web interface included.
-
-### 🔌 PocketBase Integration
-A robust data layer powered by PocketBase.
-- **Admin Auth**: Secure and automated administrative access to collections.
-- **Exhaustive Fetching**: Custom pagination logic to retrieve complete historical data.
-- **Automatic Documentation**: Fully compliant OpenAPI 3.0 spec generated via `utoipa`.
-
-### Investor Dashboard
-- Restricted to `LoutreInvesti` and `Admin` accounts.
-- Displays current PocketBase record counts: Discord accounts, Minecraft players, Minecraft servers, and awarded badges.
-- Counts describe stored records, not active users or live server availability. They are queried on page load or manual refresh, with a UTC retrieval timestamp.
-- Database failures return HTTP 503 instead of fabricated or partial statistics. Responses use `Cache-Control: no-store`.
-- Frontend regression checks: `node --test tests/investor_page.test.cjs`.
-
----
-
-## 🏗 Architecture
-
-OAPI follows a strictly decoupled, layered architecture to ensure maintainability and testability:
-
-| Layer | Responsibility |
+| Area | Description |
 | :--- | :--- |
-| **Handlers** | HTTP entry points, parameter extraction, and status codes. |
-| **Actions** | Use-case orchestration and external data fetching. |
-| **Services** | Pure business logic and computationally intensive tasks. |
-| **Models** | Strictly typed DTOs and OpenAPI schema definitions. |
-| **Utils** | Generic HTTP fetchers, formatters, and global constants. |
+| **Profile cards** | PNG summary cards for Discord and Minecraft profiles (messages, voice time, playtime, distance, blocks). Generation is skipped when the SHA-256 hash of the profile state is unchanged. |
+| **Monitoring** | Parallel health checks of HTTP(S) services and Minecraft servers (Server List Ping), with a web dashboard. |
+| **Authentication** | Discord OAuth2 login, stateless JWT session cookie, roles (`Admin`, `LoutreInvesti`, …), service API key for trusted servers and read-only `rom_` tokens for games. |
+| **Friends** | Friendship system between Discord accounts. |
+| **Badges** | Automatic badge attribution from Discord and Minecraft statistics, rules defined in `badges.yaml`. |
+| **Discord activity** | JSON endpoints for Discord activity statistics, with request limits. |
+| **Investor statistics** | PocketBase record counts, restricted to `LoutreInvesti` and `Admin` accounts. Returns `503` rather than partial data when the database fails. |
+| **Daily tasks** | Background scheduler: account purge, badge refresh, then Minecraft head and skin refresh from Mojang. |
+| **API documentation** | OpenAPI 3 specification generated with `utoipa`, served through Swagger UI. |
 
----
+## Architecture
 
-## ⚙️ Configuration
+OAPI uses a layered architecture. Each layer only depends on the layers below it.
 
-The system uses a hierarchical YAML configuration management system.
+| Layer | Directory | Responsibility |
+| :--- | :--- | :--- |
+| Routes | `src/routes/` | Router assembly and middleware (authentication, CORS, rate limiting). |
+| Handlers | `src/handlers/` | HTTP entry points: parameter extraction, status codes. |
+| Actions | `src/actions/` | Use-case orchestration and external data fetching. |
+| Services | `src/services/` | Business logic: image rendering, badges, scheduler, Mojang skins. |
+| Models | `src/models/` | Typed DTOs and OpenAPI schemas. |
+| Utils | `src/utils/` | PocketBase client, formatters, paths and constants. |
 
-1. **`default_config.yaml`**: The source of truth. Contains all default values and mandatory structure. (Committed to Git).
-2. **`config.yaml`**: Local overrides for environment-specific settings (local URLs, secret keys). (Ignored by Git).
+Static web pages are in `public/`, front-end tests in `tests/`, deployment files in `deploy/`.
+See [docs/architecture.md](docs/architecture.md) for details.
 
-*On first run, the application automatically generates a `config.yaml` template if it is missing.*
+**External dependencies:** PocketBase (data storage), the Discord API (OAuth2, profiles) and the
+Mojang API (Minecraft skins).
 
----
+## Prerequisites
 
-## 🚀 Getting Started
+- [Rust](https://www.rust-lang.org/tools/install) stable, 1.85 or later (edition 2024)
+- [Node.js](https://nodejs.org) 18 or later, to run the front-end tests
+- A reachable PocketBase instance and its administrator credentials
+- A Discord application (client ID, client secret, redirect URL)
+- Docker and Docker Compose, for production deployment only
 
-### Prerequisites
-- [Rust](https://www.rust-lang.org/tools/install) (latest stable)
-- A terminal with `cargo` access
+## Getting started
 
-### Installation & Run
 ```bash
-# Clone the repository
 git clone https://github.com/matheo-1712/OAPI.git
 cd OAPI
+cp .env.example .env
+```
 
-# Run in development mode
+Fill in `.env` (see [Environment variables](#environment-variables)), then start the server:
+
+```bash
 cargo run
 ```
 
-Before starting, copy `.env.example` to `.env`, supply the PocketBase and Discord credentials,
-and set `JWT_SECRET` to a cryptographically random value of at least 32 bytes. Startup rejects
-missing or short secrets. Production requires `OAPI_ENV=production`, an HTTPS Discord callback
-URL and TLS termination on the reverse proxy. Session cookies are HttpOnly and SameSite=Lax.
+The server listens on `http://127.0.0.1:3000` by default.
 
-Generated PNGs are stored in `generated_images/`, outside `public/`. Their URLs require the
-owner's session or an administrator session, including for Minecraft profiles. Existing files
-under `public/generated_images/` are no longer served; regenerate profiles after upgrading.
-Image publication is atomic and reports write failures. Previous cache entries are retained to
-avoid breaking concurrent downloads; disk retention should be managed separately.
+> [!WARNING]
+> Daily tasks run at startup, including the purge of Discord accounts on the configured
+> PocketBase. When working against a shared database, set `scheduler.enabled: false` in
+> `config.yaml`. See [docs/daily_tasks.md](docs/daily_tasks.md).
 
-### Accessing the API
-- **Swagger UI**: [http://localhost:3000/swagger-ui](http://localhost:3000/swagger-ui)
-- **Monitoring Dashboard**: [http://localhost:3000/monitoring.html](http://localhost:3000/monitoring.html)
+## Configuration
 
----
+### Configuration files
 
-## 🛠 Development & Quality
+Configuration is loaded in this order, each source overriding the previous one:
 
-We maintain a **Zero Warnings Policy**. Every contribution must pass strict CI/CD checks.
+1. **`default_config.yaml`**: default values and complete structure. Committed.
+2. **`config.yaml`**: local overrides (host, port, monitored services, roles, scheduler).
+   Ignored by Git. A commented template is created on first run when the file is missing.
+3. **Environment variables**: secrets and environment mode.
 
-### Pre-commit Workflow
-Before pushing, ensure your code meets the quality standards:
+See [docs/configuration.md](docs/configuration.md) for every key.
+
+### Environment variables
+
+Defined in `.env`, see [.env.example](.env.example). Never commit `.env`.
+
+| Variable | Required | Description |
+| :--- | :---: | :--- |
+| `OAPI_ENV` | Yes | `development` or `production`. |
+| `PB_URL` | Yes | PocketBase URL. |
+| `PB_EMAIL` | Yes | PocketBase administrator email. |
+| `PB_PASSWORD` | Yes | PocketBase administrator password. |
+| `DISCORD_CLIENT_ID` | Yes | Discord application client ID. |
+| `DISCORD_CLIENT_SECRET` | Yes | Discord application client secret. |
+| `DISCORD_REDIRECT_URL` | Yes | OAuth2 callback, ending with `/api/auth/callback`. Must be HTTPS in production. |
+| `JWT_SECRET` | Yes | Random secret of at least 32 bytes (`openssl rand -hex 32`). Startup fails if it is missing or too short. |
+| `OAPI_SERVICE_API_KEY` | No | Key for trusted server-to-server calls, with administrator rights. Never expose it to browser code. |
+| `RUST_LOG` | No | Log filter, for example `info,OAPI=debug,tower_http=debug`. |
+| `POCKETBASE_NETWORK` | No | Docker network shared with PocketBase (Compose only). Default: `pocketbase_network`. |
+
+## Usage
+
+| URL | Description |
+| :--- | :--- |
+| `/` | Home page: login and badge refresh. |
+| `/tools.html` | Card generation and personal Discord activity. |
+| `/explorer.html` | Route catalogue built from the OpenAPI specification. |
+| `/monitoring.html` | Monitoring dashboard, refreshed every 30 seconds. |
+| `/swagger-ui` | Swagger UI. The specification is at `/api-docs/openapi.json`. |
+| `/healthz` | Liveness probe, returns `204 No Content`. |
+
+API routes are under the `/api` prefix (configurable with `server.routes.base`).
+
+Generated images are written to `generated_images/`, outside `public/`. They are only served to
+the profile owner or to an administrator.
+
+## Deployment
+
+Production runs with Docker Compose behind a reverse proxy that terminates TLS. The container
+listens on port `9003` and joins the PocketBase Docker network.
+
 ```bash
-# Format code
-cargo fmt
+docker compose up -d --build
+```
 
-# Check for lints and warnings
+Production requires `OAPI_ENV=production` and an HTTPS `DISCORD_REDIRECT_URL`. Production settings
+are in [deploy/config.production.yaml](deploy/config.production.yaml).
+The full procedure is in [docs/production.md](docs/production.md).
+
+## Testing and quality
+
+The project follows a zero-warnings policy. CI ([.github/workflows/ci.yml](.github/workflows/ci.yml))
+runs formatting, Clippy, tests, release build and a Semgrep scan on every push to `master` and
+`feat/*`, and on every pull request to `master`.
+
+Run the same checks locally before pushing:
+
+```bash
+cargo fmt --all -- --check
+```
+
+```bash
 cargo clippy --all-targets --all-features -- -D warnings
+```
 
-# Run all tests
+```bash
 cargo test --all-features
 ```
 
----
+```bash
+node --test tests/*.test.cjs
+```
 
-## 📚 Documentation
+## Documentation
 
-Production deployment: [guide de mise en production](./docs/production.md).
+Documentation is written in French. English versions are available for some pages.
 
-Astro server integration: [Astroloutre et clé de service](./docs/astro.md).
+| Topic | French | English |
+| :--- | :--- | :--- |
+| Architecture | [architecture.md](docs/architecture.md) | [EN](docs/en/architecture.md) |
+| Configuration | [configuration.md](docs/configuration.md) | [EN](docs/en/configuration.md) |
+| Authentication | [AUTH.md](docs/AUTH.md) | [EN](docs/en/AUTH.md) |
+| PocketBase integration | [pocketbase.md](docs/pocketbase.md) | [EN](docs/en/pocketbase.md) |
+| Image generation | [generation_images.md](docs/generation_images.md) | [EN](docs/en/generation_images.md) |
+| Monitoring | [monitoring.md](docs/monitoring.md) | [EN](docs/en/monitoring.md) |
+| Web interfaces | [interfaces.md](docs/interfaces.md) | — |
+| Badges | [badges.md](docs/badges.md) | — |
+| Friends API | [friends.md](docs/friends.md) | — |
+| Discord activity | [discord_statistics.md](docs/discord_statistics.md) | — |
+| ROM linking (`rom_` tokens) | [rom_auth.md](docs/rom_auth.md), [rom_contract.md](docs/rom_contract.md) | — |
+| Astro site integration | [astro.md](docs/astro.md) | — |
+| Daily tasks | [daily_tasks.md](docs/daily_tasks.md) | — |
+| Production deployment | [production.md](docs/production.md) | — |
 
-Deep dives into specific modules:
-- [📖 Architecture Overview](./docs/architecture.md) ([EN](./docs/en/architecture.md))
-- [📡 Monitoring System](./docs/monitoring.md) ([EN](./docs/en/monitoring.md))
-- [🖼 Image Generation Engine](./docs/generation_images.md) ([EN](./docs/en/generation_images.md))
-- [⚙️ Configuration Management](./docs/configuration.md) ([EN](./docs/en/configuration.md))
-- [🔌 PocketBase Integration](./docs/pocketbase.md) ([EN](./docs/en/pocketbase.md))
-- [🗓 Tâches quotidiennes](./docs/daily_tasks.md)
+## Contributing
 
----
+1. Create a branch from `master` named `feat/<topic>` or `fix/<topic>`.
+2. Add tests for every new feature or bug fix.
+3. Make sure all checks in [Testing and quality](#testing-and-quality) pass.
+4. Write commit messages following [Conventional Commits](https://www.conventionalcommits.org)
+   (`feat(scope): …`, `fix(scope): …`, `docs(scope): …`).
+5. Open a pull request to `master`.
 
-## 🎨 Tech Stack
-- **Axum**: Asynchronous web framework.
-- **Tokio**: Multi-threaded runtime.
-- **Utoipa**: Automatic OpenAPI documentation.
-- **Image-rs**: Native image processing.
-- **Reqwest**: Type-safe HTTP client.
-- **Tracing**: Structured diagnostic logging.
+## License
 
----
-Built by [matheo-1712](https://github.com/matheo-1712)
+Distributed under the MIT License. See [LICENSE](LICENSE).
 
-Discord activity JSON endpoints and request limits: [documentation](docs/discord_statistics.md).
+Maintained by [matheo-1712](https://github.com/matheo-1712).

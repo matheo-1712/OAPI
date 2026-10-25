@@ -76,5 +76,5 @@ site_auth:
 
 # Daily maintenance tasks (account purge, then badge refresh)
 scheduler:
-  enabled: true
+  enabled: false
   run_at: "04:00" # Europe/Paris local time, HH:MM
