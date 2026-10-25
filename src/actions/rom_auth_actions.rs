@@ -99,10 +99,8 @@ async fn find_record(
     pb: &PocketbaseClient,
     filter: &str,
 ) -> Result<Option<IdentityTokenRecord>, String> {
-    let records: Vec<IdentityTokenRecord> = pb
-        .list_all_records(DISCORD_IDENTITY_TOKEN_COLLECTION, filter)
-        .await?;
-    Ok(records.into_iter().next())
+    pb.first_record(DISCORD_IDENTITY_TOKEN_COLLECTION, filter)
+        .await
 }
 
 /// Creates a pending linking code for `account`, replacing its previous pending rows.
@@ -294,13 +292,13 @@ pub async fn claims_for_token(
     if !valid_id(&record.discord_user) {
         return Ok(None);
     }
-    let users: Vec<LinkedUser> = pb
-        .list_all_records(
+    let user: Option<LinkedUser> = pb
+        .first_record(
             DISCORD_USERS_COLLECTION,
             &format!("id = {}", quote(&record.discord_user)),
         )
         .await?;
-    let Some(user) = users.into_iter().next() else {
+    let Some(user) = user else {
         return Ok(None);
     };
     if !valid_id(&user.discord_id) {

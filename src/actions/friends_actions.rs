@@ -25,10 +25,7 @@ impl From<String> for FriendError {
 }
 
 async fn find_user(pb: &PocketbaseClient, filter: &str) -> Result<Option<FriendUser>, String> {
-    let users: Vec<FriendUser> = pb
-        .list_all_records(DISCORD_USERS_COLLECTION, filter)
-        .await?;
-    Ok(users.into_iter().next())
+    pb.first_record(DISCORD_USERS_COLLECTION, filter).await
 }
 
 /// Resolve `me` from the session, or an explicit record ID the caller owns (Admin and service: any).
@@ -75,13 +72,11 @@ async fn find_pair(
     target: &str,
 ) -> Result<Option<Friendship>, String> {
     let (user_a, user_b) = pair(account, target);
-    let records: Vec<Friendship> = pb
-        .list_all_records(
-            DISCORD_FRIENDSHIPS_COLLECTION,
-            &format!("user_a = {} && user_b = {}", quote(user_a), quote(user_b)),
-        )
-        .await?;
-    Ok(records.into_iter().next())
+    pb.first_record(
+        DISCORD_FRIENDSHIPS_COLLECTION,
+        &format!("user_a = {} && user_b = {}", quote(user_a), quote(user_b)),
+    )
+    .await
 }
 
 fn validate_target(account: &str, target: &str) -> Result<(), FriendError> {

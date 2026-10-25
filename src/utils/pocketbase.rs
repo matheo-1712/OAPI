@@ -329,6 +329,20 @@ impl PocketbaseClient {
         Ok(response.total_items)
     }
 
+    /// First record matching `filter`, fetched alone instead of in a 500-row page.
+    pub async fn first_record<T>(&self, collection: &str, filter: &str) -> Result<Option<T>, String>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let response: ListResponse<T> = self
+            .list_records_with_params(
+                collection,
+                [("filter", filter), ("page", "1"), ("perPage", "1")],
+            )
+            .await?;
+        Ok(response.items.into_iter().next())
+    }
+
     /// Lists ALL records from a collection by automatically paginating.
     pub async fn list_all_records<T>(
         &self,
@@ -468,6 +482,30 @@ impl PocketbaseClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn first_record_fetches_a_single_row() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("filter".into(), "id = 'abc'".into()),
+                Matcher::UrlEncoded("perPage".into(), "1".into()),
+            ]))
+            .with_status(200)
+            .with_body(
+                r#"{"page":1,"perPage":1,"totalPages":1,"totalItems":1,"items":[{"id":"abc"}]}"#,
+            )
+            .create_async()
+            .await;
+        let pb = PocketbaseClient::for_test(server.url(), "token");
+        let record: Option<serde_json::Value> = pb
+            .first_record("discord_users", &format!("id = {}", quote("abc")))
+            .await
+            .unwrap();
+        assert_eq!(record.unwrap()["id"], "abc");
+        mock.assert_async().await;
+    }
 
     #[test]
     fn quoted_values_cannot_close_the_filter_literal() {

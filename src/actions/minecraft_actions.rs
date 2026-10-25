@@ -29,12 +29,9 @@ async fn fetch_minecraft_data(uuid: &str) -> Result<MinecraftPlayer, String> {
 
     // 1. Fetch player info by Minecraft UUID
     let filter_user = format!("account_id = {}", quote(uuid));
-    let players: Vec<MinecraftPlayer> = pb
-        .list_all_records(MINECRAFT_PLAYERS_COLLECTION, &filter_user)
-        .await?;
-    let mut player = players
-        .into_iter()
-        .next()
+    let mut player: MinecraftPlayer = pb
+        .first_record(MINECRAFT_PLAYERS_COLLECTION, &filter_user)
+        .await?
         .ok_or_else(|| format!("Player not found with UUID: {}", uuid))?;
 
     // 2. Fetch player stats

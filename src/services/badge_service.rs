@@ -334,10 +334,8 @@ async fn find(pb: &PocketbaseClient, collection: &str, id: &str) -> Result<Value
     if !valid_id(id) {
         return Err("Invalid record ID".into());
     }
-    pb.list_all_records::<Value>(collection, &format!("id = {}", quote(id)))
+    pb.first_record::<Value>(collection, &format!("id = {}", quote(id)))
         .await?
-        .into_iter()
-        .next()
         .ok_or_else(|| "Record not found".into())
 }
 
@@ -357,10 +355,10 @@ async fn persist(
         quote(alias),
         quote(badge)
     );
-    if !pb
-        .list_all_records::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
+    if pb
+        .first_record::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
         .await?
-        .is_empty()
+        .is_some()
     {
         return Ok(AwardResult {
             badge: badge.into(),
@@ -379,9 +377,9 @@ async fn persist(
     {
         // A unique index also protects against concurrent requests on other API instances.
         if pb
-            .list_all_records::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
+            .first_record::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
             .await?
-            .is_empty()
+            .is_none()
         {
             return Err(error);
         }

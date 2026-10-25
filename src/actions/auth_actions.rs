@@ -313,11 +313,11 @@ impl AuthAction {
         pb_client.login().await?;
 
         let filter = format!("discord_id={}", quote(&user_info.id));
-        let pb_users: Vec<DiscordUser> = pb_client
-            .list_all_records(DISCORD_USERS_COLLECTION, &filter)
+        let pb_user: Option<DiscordUser> = pb_client
+            .first_record(DISCORD_USERS_COLLECTION, &filter)
             .await?;
 
-        let pb_user = match pb_users.into_iter().next() {
+        let pb_user = match pb_user {
             Some(u) => u,
             None => {
                 error!("User {} not authorized in Pocketbase", user_info.username);

@@ -24,13 +24,13 @@ pub(crate) async fn authorized_with_client(
     uuid: &str,
     claims: &JwtClaims,
 ) -> Result<bool, String> {
-    let players: Vec<MinecraftPlayer> = pb
-        .list_all_records(
+    let player: Option<MinecraftPlayer> = pb
+        .first_record(
             MINECRAFT_PLAYERS_COLLECTION,
             &format!("account_id = {}", quote(uuid)),
         )
         .await?;
-    let Some(player) = players.first() else {
+    let Some(player) = player else {
         return Ok(false);
     };
     // Accept a Discord snowflake or the related PocketBase user record ID.
