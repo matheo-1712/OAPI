@@ -36,8 +36,8 @@ let stats: Vec<MinecraftStats> = pb.list_all_records("players_stats", &filter).a
 Filled daily by the `skins` task (see [daily_tasks.md](../daily_tasks.md)):
 
 - `head`: file (single, 128x128 PNG), the player's head;
-- `skin`: file (single, 128x256 PNG), full-body skin render;
-- `skin_hash`: text, formatted as `<hash>:<model>` (e.g. `abc123:classic` or `abc123:slim`). This field must be created manually in PocketBase.
+- `skin`: file (single), the skin texture as published by Mojang (64x64 PNG, or 64x32 for legacy skins), read by the website for the 3D view;
+- `skin_hash`: text, formatted as `v2:<hash>:<model>` (e.g. `v2:abc123:classic` or `v2:abc123:slim`). This field must be created manually in PocketBase.
 
 ---
 

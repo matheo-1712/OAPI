@@ -1,13 +1,13 @@
 //! Daily refresh of Minecraft heads and skins stored in PocketBase.
 //!
 //! For each Minecraft player, the Mojang skin is compared with `players.skin_hash`;
-//! when it changed (or the image fields are empty), the head and body renders are
-//! regenerated and uploaded.
+//! when it changed (or the image fields are empty), the head render and the raw
+//! skin texture are regenerated and uploaded.
 
 use crate::services::image_service::valid_uuid;
 use crate::services::mojang::{self, ProfileLookup, SESSION_SERVER_URL, SkinTexture};
 use crate::services::scheduler::{BoxFuture, TaskSummary};
-use crate::services::skin_render::{encode_png, render_body, render_head};
+use crate::services::skin_render::{encode_png, render_head, texture_png};
 use crate::utils::constants::MINECRAFT_PLAYERS_COLLECTION;
 use crate::utils::image_assets;
 use crate::utils::pocketbase::PocketbaseClient;
@@ -32,18 +32,18 @@ pub async fn refresh_all(pb: &PocketbaseClient) -> Result<TaskSummary, String> {
     refresh_all_with(pb, SESSION_SERVER_URL, MOJANG_DELAY, download_texture).await
 }
 
-/// Encoded head and body PNGs of a skin.
+/// Encoded head and skin texture PNGs.
 type Pngs = (Vec<u8>, Vec<u8>);
 
-/// Renders the head and body PNGs for a texture.
+/// Renders the head PNG and re-encodes the texture PNG.
 async fn render_pngs(texture: &SkinTexture, fetch_texture: TextureFetcher) -> Result<Pngs, String> {
     let image = fetch_texture(&texture.url)
         .await
         .ok_or("failed to download the skin texture")?
         .to_rgba8();
     let head = encode_png(&render_head(&image)?)?;
-    let body = encode_png(&render_body(&image, texture.model)?)?;
-    Ok((head, body))
+    let skin = texture_png(&image)?;
+    Ok((head, skin))
 }
 
 fn has_text(record: &Value, field: &str) -> bool {
@@ -118,14 +118,14 @@ async fn refresh_all_with(
                 None => rendered.insert(render_pngs(&texture, fetch_texture).await),
             };
             let result = match pngs {
-                Ok((head, body)) => pb
+                Ok((head, skin)) => pb
                     .update_record_multipart(
                         MINECRAFT_PLAYERS_COLLECTION,
                         &id,
                         &[("skin_hash", hash.clone())],
                         vec![
                             ("head", "head.png", head.clone()),
-                            ("skin", "skin.png", body.clone()),
+                            ("skin", "skin.png", skin.clone()),
                         ],
                     )
                     .await
@@ -257,7 +257,7 @@ mod tests {
             200,
             1,
             Matcher::AllOf(vec![
-                Matcher::Regex("abc:classic".into()),
+                Matcher::Regex("v2:abc:classic".into()),
                 Matcher::Regex("name=\"head\"".into()),
                 Matcher::Regex("name=\"skin\"".into()),
             ]),
@@ -274,7 +274,7 @@ mod tests {
         players(
             &mut server,
             json!([
-                {"id":"p1","account_id":UUID,"skin_hash":"abc:classic","head":"h.png","skin":"s.png"},
+                {"id":"p1","account_id":UUID,"skin_hash":"v2:abc:classic","head":"h.png","skin":"s.png"},
                 {"id":"p2","account_id":UUID_DASHED,"skin_hash":"","head":"","skin":""}
             ]),
         )
@@ -293,7 +293,7 @@ mod tests {
         let mut server = Server::new_async().await;
         players(
             &mut server,
-            json!([{"id":"p1","account_id":UUID,"skin_hash":"abc:classic","head":"h.png","skin":"s.png"}]),
+            json!([{"id":"p1","account_id":UUID,"skin_hash":"v2:abc:classic","head":"h.png","skin":"s.png"}]),
         )
         .await;
         let m = mojang_mock(&mut server, UUID, 200, 1).await;
@@ -308,7 +308,22 @@ mod tests {
         let mut server = Server::new_async().await;
         players(
             &mut server,
-            json!([{"id":"p1","account_id":UUID,"skin_hash":"abc:classic","head":"","skin":"s.png"}]),
+            json!([{"id":"p1","account_id":UUID,"skin_hash":"v2:abc:classic","head":"","skin":"s.png"}]),
+        )
+        .await;
+        let m = mojang_mock(&mut server, UUID, 200, 1).await;
+        let p = patch(&mut server, "p1", 200, 1).await;
+        assert_eq!(run(&server).await, summary(1, 1, &[]));
+        m.assert_async().await;
+        p.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn v1_hash_forces_regeneration() {
+        let mut server = Server::new_async().await;
+        players(
+            &mut server,
+            json!([{"id":"p1","account_id":UUID,"skin_hash":"abc:classic","head":"h.png","skin":"s.png"}]),
         )
         .await;
         let m = mojang_mock(&mut server, UUID, 200, 1).await;

@@ -80,14 +80,15 @@ notification n'est envoyée. Un `badges.yaml` invalide fait échouer cette tâch
 
 Pour chaque joueur Minecraft (`players.account_id` est un UUID ; les comptes Steam sont
 ignorés), la tâche lit le skin actuel chez Mojang et le compare à `players.skin_hash`
-(`<hash>:<modèle>`, par exemple `abc123:classic`). Si le skin a changé, ou si `head` ou
-`skin` est vide, elle génère la tête (128×128) et le skin en pied (128×256), puis les
-envoie dans `players.head` et `players.skin` avec le nouveau `skin_hash`. Un skin
-inchangé n'est pas renvoyé.
+(`v2:<hash>:<modèle>`, par exemple `v2:abc123:classic`). Si le skin a changé, ou si `head` ou
+`skin` est vide, elle génère la tête (128×128) et récupère la texture brute du skin (PNG 64×64, ou 64×32
+pour les anciens skins), puis les envoie dans `players.head` et `players.skin` avec le
+nouveau `skin_hash`. Un skin inchangé n'est pas renvoyé. Le passage au format `v2:`
+régénère tous les joueurs au premier passage de la tâche.
 
 **Fichiers remplacés.** Quand un skin change, PocketBase enregistre les nouveaux fichiers
 sous un nouveau nom et supprime les anciens. Le site statique Astroloutre affiche donc une
-image de tête ou de corps cassée pour ce joueur jusqu'à son prochain build.
+image de tête ou de skin cassée pour ce joueur jusqu'à son prochain build.
 
 **Délai et limite Mojang.** Les requêtes à Mojang sont espacées de 1,5 s (`MOJANG_DELAY`
 dans `skin_service.rs`), et un UUID présent sur plusieurs records n'est interrogé qu'une
