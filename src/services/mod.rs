@@ -1,4 +1,5 @@
 pub mod badge_service;
+pub mod image_cleanup;
 pub mod image_service;
 pub mod mojang;
 pub mod purge_service;

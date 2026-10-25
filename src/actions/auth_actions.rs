@@ -4,13 +4,17 @@ use crate::models::{
 };
 use crate::utils::constants::DISCORD_USERS_COLLECTION;
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
     TokenResponse, TokenUrl, basic::BasicClient,
 };
 use reqwest::Client;
-use std::time::{SystemTime, UNIX_EPOCH};
+use sha2::{Digest, Sha256};
+use std::collections::HashMap;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 use tracing::{debug, error};
 
 /// Handles Discord OAuth2 flow, user validation via PocketBase, and JWT management.
@@ -82,6 +86,139 @@ fn verify_with_secret(token: &str, secret: &str) -> Option<JwtClaims> {
     )
     .ok()
     .map(|data| data.claims)
+    .filter(|_| !is_revoked(token))
+}
+
+/// Upper bound of the revocation list; expired entries are dropped first.
+const MAX_REVOKED: usize = 100_000;
+
+/// Logged-out session tokens (SHA-256) with their expiry, kept until the JWT expires.
+/// In memory: a restart forgets them, which bounds the exposure to one process lifetime.
+fn revoked() -> &'static Mutex<HashMap<[u8; 32], usize>> {
+    static REVOKED: OnceLock<Mutex<HashMap<[u8; 32], usize>>> = OnceLock::new();
+    REVOKED.get_or_init(Default::default)
+}
+
+fn token_digest(token: &str) -> [u8; 32] {
+    Sha256::digest(token.as_bytes()).into()
+}
+
+fn now_secs() -> usize {
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_secs() as usize)
+        .unwrap_or_default()
+}
+
+fn is_revoked(token: &str) -> bool {
+    revoked()
+        .lock()
+        .map(|list| list.contains_key(&token_digest(token)))
+        // A poisoned list fails closed.
+        .unwrap_or(true)
+}
+
+fn revoke_until(token: &str, exp: usize) {
+    let now = now_secs();
+    if exp <= now {
+        return;
+    }
+    if let Ok(mut list) = revoked().lock() {
+        if list.len() >= MAX_REVOKED {
+            list.retain(|_, expiry| *expiry > now);
+        }
+        if list.len() < MAX_REVOKED {
+            list.insert(token_digest(token), exp);
+        }
+    }
+}
+
+/// What PocketBase currently says about a session's Discord account.
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub enum AccountState {
+    Missing,
+    Member { is_admin: bool },
+}
+
+/// Applies the live account state to claims signed earlier: a removed account loses its
+/// session and a revoked administrator keeps only the Normal role. A lookup failure only
+/// drops administrator rights, so an outage never grants anything.
+pub fn reconcile_claims(
+    mut claims: JwtClaims,
+    state: Result<AccountState, String>,
+) -> Option<JwtClaims> {
+    match state {
+        Ok(AccountState::Missing) => None,
+        Ok(AccountState::Member { is_admin }) => {
+            if claims.role == Role::Admin && !is_admin {
+                claims.role = Role::Normal;
+            }
+            Some(claims)
+        }
+        Err(error) => {
+            if claims.role == Role::Admin {
+                error!("Administrator session check failed: {}", error);
+                claims.role = Role::Normal;
+            }
+            Some(claims)
+        }
+    }
+}
+
+/// Account states are cached briefly so protected routes do not each query PocketBase.
+const ACCOUNT_STATE_TTL: Duration = Duration::from_secs(60);
+const MAX_ACCOUNT_STATES: usize = 10_000;
+
+type AccountStates = HashMap<String, (Instant, AccountState)>;
+
+fn account_states() -> &'static Mutex<AccountStates> {
+    static STATES: OnceLock<Mutex<AccountStates>> = OnceLock::new();
+    STATES.get_or_init(Default::default)
+}
+
+async fn fetch_account_state(discord_id: &str) -> Result<AccountState, String> {
+    if !crate::services::badge_service::valid_id(discord_id) {
+        return Ok(AccountState::Missing);
+    }
+    let mut pb = PocketbaseClient::new();
+    pb.login().await?;
+    let users: crate::utils::pocketbase::ListResponse<serde_json::Value> = pb
+        .list_records_with_params(
+            DISCORD_USERS_COLLECTION,
+            [
+                ("filter", format!("discord_id = {}", quote(discord_id))),
+                ("fields", "is_admin".into()),
+                ("page", "1".into()),
+                ("perPage", "1".into()),
+            ],
+        )
+        .await?;
+    Ok(match users.items.first() {
+        None => AccountState::Missing,
+        Some(user) => AccountState::Member {
+            is_admin: user["is_admin"] == true,
+        },
+    })
+}
+
+/// Live (at most [`ACCOUNT_STATE_TTL`] old) state of a session's account.
+pub async fn account_state(discord_id: &str) -> Result<AccountState, String> {
+    if let Ok(states) = account_states().lock()
+        && let Some((at, state)) = states.get(discord_id)
+        && at.elapsed() < ACCOUNT_STATE_TTL
+    {
+        return Ok(*state);
+    }
+    let state = fetch_account_state(discord_id).await?;
+    if let Ok(mut states) = account_states().lock() {
+        if states.len() >= MAX_ACCOUNT_STATES {
+            states.retain(|_, (at, _)| at.elapsed() < ACCOUNT_STATE_TTL);
+        }
+        if states.len() < MAX_ACCOUNT_STATES {
+            states.insert(discord_id.to_owned(), (Instant::now(), state));
+        }
+    }
+    Ok(state)
 }
 
 impl AuthAction {
@@ -100,7 +237,7 @@ impl AuthAction {
 
         Self {
             oauth_client,
-            reqwest_client: Client::new(),
+            reqwest_client: crate::utils::http::shared().clone(),
         }
     }
 
@@ -175,12 +312,12 @@ impl AuthAction {
         let mut pb_client = PocketbaseClient::new();
         pb_client.login().await?;
 
-        let filter = format!("discord_id='{}'", user_info.id);
-        let pb_users: Vec<DiscordUser> = pb_client
-            .list_all_records(DISCORD_USERS_COLLECTION, &filter)
+        let filter = format!("discord_id={}", quote(&user_info.id));
+        let pb_user: Option<DiscordUser> = pb_client
+            .first_record(DISCORD_USERS_COLLECTION, &filter)
             .await?;
 
-        let pb_user = match pb_users.into_iter().next() {
+        let pb_user = match pb_user {
             Some(u) => u,
             None => {
                 error!("User {} not authorized in Pocketbase", user_info.username);
@@ -276,12 +413,71 @@ impl AuthAction {
         let config = Config::global();
         verify_with_secret(token, &config.auth.jwt_secret)
     }
+
+    /// Invalidates a session token server-side until it would have expired.
+    pub fn revoke_token(token: &str) {
+        if let Some(claims) = Self::verify_token(token) {
+            revoke_until(token, claims.exp);
+        }
+    }
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
     const TEST_SECRET: &str = "test-only-secret-at-least-32-bytes-long";
+
+    fn session(role: Role) -> JwtClaims {
+        JwtClaims {
+            sub: "123".into(),
+            username: "Loutre".into(),
+            role,
+            exp: now_secs() + 3600,
+            iat: now_secs(),
+            profile: None,
+        }
+    }
+
+    #[test]
+    fn revoked_tokens_stop_verifying() {
+        let token = encode(
+            &Header::default(),
+            &session(Role::Normal),
+            &EncodingKey::from_secret(TEST_SECRET.as_bytes()),
+        )
+        .unwrap();
+        assert!(verify_with_secret(&token, TEST_SECRET).is_some());
+        revoke_until(&token, now_secs() + 3600);
+        assert!(verify_with_secret(&token, TEST_SECRET).is_none());
+    }
+
+    #[test]
+    fn live_account_state_revokes_admin_rights_and_removed_accounts() {
+        let admin = || session(Role::Admin);
+        assert_eq!(
+            reconcile_claims(admin(), Ok(AccountState::Member { is_admin: true }))
+                .unwrap()
+                .role,
+            Role::Admin
+        );
+        assert_eq!(
+            reconcile_claims(admin(), Ok(AccountState::Member { is_admin: false }))
+                .unwrap()
+                .role,
+            Role::Normal
+        );
+        assert_eq!(
+            reconcile_claims(admin(), Err("down".into())).unwrap().role,
+            Role::Normal
+        );
+        assert!(reconcile_claims(admin(), Ok(AccountState::Missing)).is_none());
+        assert_eq!(
+            reconcile_claims(session(Role::LoutreInvesti), Err("down".into()))
+                .unwrap()
+                .role,
+            Role::LoutreInvesti
+        );
+    }
 
     #[test]
     fn oauth_state_rejects_expiry_tampering_and_wrong_key() {

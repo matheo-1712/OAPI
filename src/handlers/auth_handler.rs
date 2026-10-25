@@ -3,7 +3,7 @@ use crate::config::Config;
 use axum::{
     Json,
     extract::Query,
-    http::StatusCode,
+    http::{HeaderMap, StatusCode},
     response::{IntoResponse, Redirect, Response},
 };
 use axum_extra::extract::cookie::{Cookie, CookieJar, SameSite};
@@ -43,6 +43,31 @@ fn safe_return_to(url: Option<String>) -> String {
         return url;
     }
     "/".to_string()
+}
+
+/// Logout stays a GET link, so it is limited to top-level navigations: an `<img>`, a
+/// `fetch` or an iframe planted on another site cannot end the session. With
+/// `same_site_only`, a navigation started from another site is refused too (OAPI portal).
+/// Browsers without Fetch Metadata headers are let through.
+fn logout_allowed(headers: &HeaderMap, same_site_only: bool) -> bool {
+    let header = |name: &str| headers.get(name).and_then(|value| value.to_str().ok());
+    let navigation = header("sec-fetch-mode").is_none_or(|mode| mode == "navigate")
+        && header("sec-fetch-dest").is_none_or(|dest| dest == "document");
+    let origin_ok = !same_site_only
+        || header("sec-fetch-site")
+            .is_none_or(|site| matches!(site, "same-origin" | "same-site" | "none"));
+    navigation && origin_ok
+}
+
+fn logout_refused() -> Response {
+    (StatusCode::FORBIDDEN, "Déconnexion refusée.").into_response()
+}
+
+/// Logging out also invalidates the token server-side, not just the browser cookie.
+fn revoke_session(jar: &CookieJar) {
+    if let Some(cookie) = jar.get("auth_token") {
+        AuthAction::revoke_token(cookie.value());
+    }
 }
 
 fn auth_cookie(name: &'static str, value: String, seconds: i64) -> Cookie<'static> {
@@ -281,15 +306,24 @@ pub async fn me(jar: CookieJar) -> impl IntoResponse {
         ("return_to" = Option<String>, Query, description = "Optional URL to redirect to after logout")
     ),
     responses(
-        (status = 303, description = "Clears the auth_token cookie and redirects to home or return_to")
+        (status = 303, description = "Clears the auth_token cookie and redirects to home or return_to"),
+        (status = 403, description = "Not a top-level navigation (embedded or scripted request)")
     )
 )]
-pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> impl IntoResponse {
+pub async fn logout(
+    jar: CookieJar,
+    headers: HeaderMap,
+    Query(query): Query<AuthLogoutQuery>,
+) -> Response {
+    if !logout_allowed(&headers, true) {
+        return logout_refused();
+    }
+    revoke_session(&jar);
     let cookie = auth_cookie("auth_token", String::new(), 0);
 
     let return_to = safe_return_to(query.return_to);
 
-    (jar.remove(cookie), Redirect::to(&return_to))
+    (jar.remove(cookie), Redirect::to(&return_to)).into_response()
 }
 
 #[utoipa::path(
@@ -354,17 +388,23 @@ pub async fn site_me(jar: CookieJar) -> impl IntoResponse {
         ("origin" = Option<String>, Query, description = "Optional website origin (site_auth.url or site_auth.extra_urls); defaults to site_auth.url")
     ),
     responses(
-        (status = 303, description = "Clears the auth_token cookie and redirects to the website")
+        (status = 303, description = "Clears the auth_token cookie and redirects to the website"),
+        (status = 403, description = "Not a top-level navigation (embedded or scripted request)")
     )
 )]
 pub async fn site_logout(
     jar: CookieJar,
+    headers: HeaderMap,
     Query(query): Query<AuthLogoutQuery>,
-) -> impl IntoResponse {
+) -> Response {
+    if !logout_allowed(&headers, false) {
+        return logout_refused();
+    }
     let cookie = auth_cookie("auth_token", String::new(), 0);
     let Some(target) = site_target(query.return_to, query.origin) else {
         return (StatusCode::BAD_REQUEST, "Site inconnu.").into_response();
     };
+    revoke_session(&jar);
 
     (jar.remove(cookie), Redirect::to(&redirect_url(&target))).into_response()
 }
@@ -383,6 +423,37 @@ mod tests {
         assert_eq!(cookie.max_age(), Some(Duration::seconds(604800)));
         assert_eq!(cookie.secure(), Some(Config::global().secure_cookies()));
         assert_eq!(cookie.domain(), None);
+    }
+
+    #[test]
+    fn logout_requires_a_top_level_navigation() {
+        let headers = |pairs: &[(&'static str, &'static str)]| {
+            let mut map = HeaderMap::new();
+            for (name, value) in pairs {
+                map.insert(*name, value.parse().unwrap());
+            }
+            map
+        };
+        let link = [
+            ("sec-fetch-mode", "navigate"),
+            ("sec-fetch-dest", "document"),
+        ];
+        assert!(logout_allowed(&headers(&[]), true));
+        assert!(logout_allowed(
+            &headers(&[link[0], link[1], ("sec-fetch-site", "same-origin")]),
+            true
+        ));
+        let from_other_site = headers(&[link[0], link[1], ("sec-fetch-site", "cross-site")]);
+        assert!(!logout_allowed(&from_other_site, true));
+        assert!(logout_allowed(&from_other_site, false));
+        for embedded in [
+            headers(&[("sec-fetch-mode", "no-cors"), ("sec-fetch-dest", "image")]),
+            headers(&[("sec-fetch-mode", "cors"), ("sec-fetch-dest", "empty")]),
+            headers(&[("sec-fetch-mode", "navigate"), ("sec-fetch-dest", "iframe")]),
+        ] {
+            assert!(!logout_allowed(&embedded, false));
+            assert!(!logout_allowed(&embedded, true));
+        }
     }
 
     #[test]

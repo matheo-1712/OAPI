@@ -1,4 +1,5 @@
 use crate::services::scheduler::TaskSummary;
+use crate::utils::pocketbase::quote;
 use crate::utils::{constants::*, pocketbase::PocketbaseClient};
 use serde::{Deserialize, Serialize};
 use serde_json::{Value, json};
@@ -67,10 +68,10 @@ pub async fn refresh_mine(
     let users = pb
         .list_all_records::<Value>(
             DISCORD_USERS_COLLECTION,
-            &format!("discord_id = '{discord_id}'"),
+            &format!("discord_id = {}", quote(discord_id)),
         )
         .await?;
-    let mut filter = format!("discord_user = '{discord_id}'");
+    let mut filter = format!("discord_user = {}", quote(discord_id));
     let mut accounts = Vec::new();
     for user in users {
         let id = user["id"]
@@ -78,7 +79,7 @@ pub async fn refresh_mine(
             .filter(|id| valid_id(id))
             .ok_or("Invalid stored user ID")?
             .to_owned();
-        filter.push_str(&format!(" || discord_user = '{id}'"));
+        filter.push_str(&format!(" || discord_user = {}", quote(&id)));
         accounts.push((
             RecipientKind::DiscordUser,
             id,
@@ -321,7 +322,7 @@ pub(crate) async fn can_refresh(
     let users = pb
         .list_all_records::<Value>(
             DISCORD_USERS_COLLECTION,
-            &format!("discord_id = '{}'", claims.sub),
+            &format!("discord_id = {}", quote(&claims.sub)),
         )
         .await?;
     Ok(users
@@ -333,10 +334,8 @@ async fn find(pb: &PocketbaseClient, collection: &str, id: &str) -> Result<Value
     if !valid_id(id) {
         return Err("Invalid record ID".into());
     }
-    pb.list_all_records::<Value>(collection, &format!("id = '{id}'"))
+    pb.first_record::<Value>(collection, &format!("id = {}", quote(id)))
         .await?
-        .into_iter()
-        .next()
         .ok_or_else(|| "Record not found".into())
 }
 
@@ -348,11 +347,18 @@ async fn persist(
     alias: &str,
     badge: &str,
 ) -> Result<AwardResult, String> {
-    let filter = format!("({field} = '{recipient}' || {field} = '{alias}') && badge = '{badge}'");
-    if !pb
-        .list_all_records::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
+    let filter = format!(
+        "({} = {} || {} = {}) && badge = {}",
+        field,
+        quote(recipient),
+        field,
+        quote(alias),
+        quote(badge)
+    );
+    if pb
+        .first_record::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
         .await?
-        .is_empty()
+        .is_some()
     {
         return Ok(AwardResult {
             badge: badge.into(),
@@ -371,9 +377,9 @@ async fn persist(
     {
         // A unique index also protects against concurrent requests on other API instances.
         if pb
-            .list_all_records::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
+            .first_record::<Value>(DISCORD_USER_BADGES_COLLECTION, &filter)
             .await?
-            .is_empty()
+            .is_none()
         {
             return Err(error);
         }
@@ -523,7 +529,13 @@ async fn evaluate_with_definitions(
     let owned = pb
         .list_all_records::<Value>(
             DISCORD_USER_BADGES_COLLECTION,
-            &format!("{award_field} = '{player_id}' || {award_field} = '{uuid}'"),
+            &format!(
+                "{} = {} || {} = {}",
+                award_field,
+                quote(player_id),
+                award_field,
+                quote(uuid)
+            ),
         )
         .await?;
     let owned: std::collections::HashSet<&str> = owned
@@ -554,7 +566,13 @@ async fn evaluate_with_definitions(
     let mut stats = pb
         .list_all_records::<Value>(
             stats_collection,
-            &format!("{stats_field} = '{player_id}' || {stats_field} = '{uuid}'"),
+            &format!(
+                "{} = {} || {} = {}",
+                stats_field,
+                quote(player_id),
+                stats_field,
+                quote(uuid)
+            ),
         )
         .await?;
     if kind == RecipientKind::DiscordUser {
@@ -582,7 +600,7 @@ async fn evaluate_with_definitions(
         let palworld = pb
             .list_all_records::<Value>(
                 PALWORLD_STATS_COLLECTION,
-                &format!("player = '{player_id}'"),
+                &format!("player = {}", quote(player_id)),
             )
             .await?;
         stats.push(json!({"palworld_joined": u8::from(!palworld.is_empty())}));

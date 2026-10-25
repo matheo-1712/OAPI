@@ -28,7 +28,8 @@ sur l'hôte qui termine HTTPS. PocketBase reste un service externe.
    ou `http://IP_DU_SERVEUR:9003` s'il tourne sur une autre machine, avec un certificat TLS
    valide et redirection HTTP vers HTTPS. Docker publie le port 9003 sur les interfaces
    réseau de l'hôte (`9003:9003`), vers le port 9003 de l'application.
-   Configurer `trusted_proxies` avec les IP exactes des pairs vus par l'application
+   Configurer `trusted_proxies` avec les IP ou plages CIDR des pairs vus par l'application
+   (`172.16.0.0/12` par défaut dans `deploy/config.production.yaml`, pour un proxy en conteneur Docker)
    et faire écraser `X-Forwarded-For` par le proxy. Sans cela, les visiteurs anonymes
    derrière un même proxy partagent le quota de requêtes.
 

@@ -6,6 +6,7 @@ use crate::models::discord_friends::{
 use crate::models::{JwtClaims, Role};
 use crate::services::badge_service::valid_id;
 use crate::utils::constants::{DISCORD_FRIENDSHIPS_COLLECTION, DISCORD_USERS_COLLECTION};
+use crate::utils::pocketbase::quote;
 use crate::utils::pocketbase::{ListResponse, PocketbaseClient};
 use serde_json::json;
 
@@ -24,10 +25,7 @@ impl From<String> for FriendError {
 }
 
 async fn find_user(pb: &PocketbaseClient, filter: &str) -> Result<Option<FriendUser>, String> {
-    let users: Vec<FriendUser> = pb
-        .list_all_records(DISCORD_USERS_COLLECTION, filter)
-        .await?;
-    Ok(users.into_iter().next())
+    pb.first_record(DISCORD_USERS_COLLECTION, filter).await
 }
 
 /// Resolve `me` from the session, or an explicit record ID the caller owns (Admin and service: any).
@@ -40,7 +38,7 @@ pub async fn resolve_account(
         if !valid_id(&claims.sub) {
             return Err(FriendError::Forbidden);
         }
-        return find_user(pb, &format!("discord_id = '{}'", claims.sub))
+        return find_user(pb, &format!("discord_id = {}", quote(&claims.sub)))
             .await?
             .map(|user| user.id)
             .ok_or(FriendError::NotFound(
@@ -50,7 +48,7 @@ pub async fn resolve_account(
     if !valid_id(account) {
         return Err(FriendError::Invalid("Invalid record ID"));
     }
-    let user = find_user(pb, &format!("id = '{account}'"))
+    let user = find_user(pb, &format!("id = {}", quote(account)))
         .await?
         .ok_or(FriendError::NotFound("Compte introuvable."))?;
     if claims.role != Role::Admin && user.discord_id != claims.sub {
@@ -74,13 +72,11 @@ async fn find_pair(
     target: &str,
 ) -> Result<Option<Friendship>, String> {
     let (user_a, user_b) = pair(account, target);
-    let records: Vec<Friendship> = pb
-        .list_all_records(
-            DISCORD_FRIENDSHIPS_COLLECTION,
-            &format!("user_a = '{user_a}' && user_b = '{user_b}'"),
-        )
-        .await?;
-    Ok(records.into_iter().next())
+    pb.first_record(
+        DISCORD_FRIENDSHIPS_COLLECTION,
+        &format!("user_a = {} && user_b = {}", quote(user_a), quote(user_b)),
+    )
+    .await
 }
 
 fn validate_target(account: &str, target: &str) -> Result<(), FriendError> {
@@ -96,7 +92,7 @@ fn validate_target(account: &str, target: &str) -> Result<(), FriendError> {
 }
 
 pub async fn list(pb: &PocketbaseClient, account: &str) -> Result<FriendList, String> {
-    let filter = format!("user_a = '{account}' || user_b = '{account}'");
+    let filter = format!("user_a = {} || user_b = {}", quote(account), quote(account));
     let mut records = Vec::new();
     for page in 1..=20u32 {
         let response: ListResponse<Friendship> = pb
@@ -203,7 +199,7 @@ pub async fn request(
         .list_records_with_params(
             DISCORD_USERS_COLLECTION,
             [
-                ("filter", format!("discord_tag = '{tag}'")),
+                ("filter", format!("discord_tag = {}", quote(&tag))),
                 ("page", "1".into()),
                 ("perPage", "2".into()),
                 ("fields", "id".into()),
@@ -241,7 +237,10 @@ async fn request_to_user(
         }
         Some(existing) => Ok(mark_accepted(pb, &existing).await?),
         None => {
-            if find_user(pb, &format!("id = '{target}'")).await?.is_none() {
+            if find_user(pb, &format!("id = {}", quote(target)))
+                .await?
+                .is_none()
+            {
                 return Err(FriendError::NotFound("Utilisateur introuvable."));
             }
             let (user_a, user_b) = pair(account, target);

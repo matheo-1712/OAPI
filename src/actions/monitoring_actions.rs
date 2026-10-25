@@ -15,6 +15,25 @@ struct DiscordBotHealthResponse {
     discord: DiscordBotDiscordData,
 }
 
+/// How long a full status report is served from memory: the route is public, and
+/// each uncached call fans out to every configured service.
+const STATUS_CACHE_TTL: Duration = Duration::from_secs(30);
+
+/// Cached [`check_all_services`]; concurrent callers wait for one refresh.
+pub async fn cached_status(config: &MonitoringConfig) -> Vec<ServiceResult> {
+    static CACHE: tokio::sync::Mutex<Option<(Instant, Vec<ServiceResult>)>> =
+        tokio::sync::Mutex::const_new(None);
+    let mut cache = CACHE.lock().await;
+    if let Some((at, results)) = cache.as_ref()
+        && at.elapsed() < STATUS_CACHE_TTL
+    {
+        return results.clone();
+    }
+    let results = check_all_services(config).await;
+    *cache = Some((Instant::now(), results.clone()));
+    results
+}
+
 /// Checks the status of all configured services concurrently.
 pub async fn check_all_services(config: &MonitoringConfig) -> Vec<ServiceResult> {
     let mut handles = Vec::new();
@@ -76,15 +95,32 @@ pub async fn check_all_services(config: &MonitoringConfig) -> Vec<ServiceResult>
     results
 }
 
+/// Public status text: never the upstream URL or address, which reveal internal hosts.
+fn request_failure(error: &reqwest::Error) -> &'static str {
+    if error.is_timeout() {
+        "Request timed out"
+    } else if error.is_connect() {
+        "Connection failed"
+    } else {
+        "Request failed"
+    }
+}
+
+fn ping_failure(error: &craftping::Error) -> &'static str {
+    match error {
+        craftping::Error::Io(_) => "Connection failed",
+        _ => "Ping failed",
+    }
+}
+
 /// Performs a generic HTTP health check.
 pub async fn check_http_service(name: String, url: String, type_name: &str) -> ServiceResult {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
-
     let start = Instant::now();
-    let resp = client.get(&url).send().await;
+    let resp = crate::utils::http::shared()
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await;
     let duration = start.elapsed().as_millis() as u64;
 
     let type_name_str = type_name.to_string();
@@ -112,20 +148,19 @@ pub async fn check_http_service(name: String, url: String, type_name: &str) -> S
             status: ServiceStatus::Down,
             response_time_ms: duration,
             metadata: None,
-            error: Some(e.to_string()),
+            error: Some(request_failure(&e).into()),
         },
     }
 }
 
 /// Performs a Discord bot health check with specific metadata.
 pub async fn check_discord_service(name: String, url: String) -> ServiceResult {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(5))
-        .build()
-        .unwrap_or_default();
-
     let start = Instant::now();
-    let resp = client.get(&url).send().await;
+    let resp = crate::utils::http::shared()
+        .get(&url)
+        .timeout(Duration::from_secs(5))
+        .send()
+        .await;
     let duration = start.elapsed().as_millis() as u64;
 
     match resp {
@@ -164,7 +199,7 @@ pub async fn check_discord_service(name: String, url: String) -> ServiceResult {
             status: ServiceStatus::Down,
             response_time_ms: duration,
             metadata: None,
-            error: Some(e.to_string()),
+            error: Some(request_failure(&e).into()),
         },
     }
 }
@@ -201,7 +236,7 @@ pub async fn check_minecraft_service(name: String, host: String, port: u16) -> S
             status: ServiceStatus::Down,
             response_time_ms: duration,
             metadata: None,
-            error: Some(format!("Ping failed: {}", e)),
+            error: Some(ping_failure(&e).into()),
         },
         Err(_) => ServiceResult {
             name,

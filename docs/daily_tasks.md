@@ -1,10 +1,11 @@
 # Tâches quotidiennes
 
-OAPI exécute chaque jour trois tâches de maintenance en arrière-plan, dans cet ordre :
+OAPI exécute chaque jour quatre tâches de maintenance en arrière-plan, dans cet ordre :
 
 1. **purge** : suppression des comptes Discord dont la date de suppression est passée ;
 2. **badges** : recalcul des badges de tous les comptes Discord et Minecraft ;
-3. **skins** : mise à jour de la tête et du skin des joueurs Minecraft.
+3. **skins** : mise à jour de la tête et du skin des joueurs Minecraft ;
+4. **images** : nettoyage des images de profil générées sur le disque.
 
 Une tâche en échec n'empêche pas la suivante de s'exécuter.
 
@@ -53,6 +54,8 @@ Pour chaque compte (record `R`, identifiant Discord `S`), dans cet ordre :
 | 4 | `discord_identity_token` | supprimer les lignes `discord_user = R` |
 | 5 | `players` | ne pas supprimer : mettre `discord_user` à `""` pour les joueurs liés à `R` ou `S` |
 | 6 | `discord_users` | supprimer le record `R` |
+
+Une fois le record supprimé, le dossier `generated_images/discord_summary/<snowflake>` est effacé : ces images montrent le profil Discord et les statistiques du membre. Un échec est seulement loggé, le compte étant déjà supprimé.
 
 ### Comptes Minecraft conservés
 
@@ -113,6 +116,15 @@ réussi.
 (profil illisible, téléchargement, rendu ou envoi). Les records du groupe qui a reçu un
 `429` comptent dans `processed` mais ni en réussi ni en échec. Le log indique en plus le
 nombre de records mis à jour.
+
+## Images générées
+
+Chaque changement de statistiques publie une nouvelle image et les anciennes restent
+lisibles pour les liens déjà distribués. Dans chaque dossier de propriétaire de
+`generated_images/discord_summary` et `generated_images/minecraft_summary`, la tâche
+garde les 3 images les plus récentes ainsi que toutes celles de moins de 7 jours, et
+supprime les fichiers temporaires (`.tmp`) de plus d'une heure. `processed` compte les
+dossiers parcourus, `failed` liste ceux en échec.
 
 ## Redémarrage et rattrapage
 

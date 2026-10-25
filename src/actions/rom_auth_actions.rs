@@ -7,6 +7,7 @@ use crate::models::{JwtClaims, Role};
 use crate::services::badge_service::valid_id;
 use crate::utils::constants::{DISCORD_IDENTITY_TOKEN_COLLECTION, DISCORD_USERS_COLLECTION};
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use rand::rngs::OsRng;
 use rand::{Rng, RngCore};
 use serde::Deserialize;
@@ -98,10 +99,8 @@ async fn find_record(
     pb: &PocketbaseClient,
     filter: &str,
 ) -> Result<Option<IdentityTokenRecord>, String> {
-    let records: Vec<IdentityTokenRecord> = pb
-        .list_all_records(DISCORD_IDENTITY_TOKEN_COLLECTION, filter)
-        .await?;
-    Ok(records.into_iter().next())
+    pb.first_record(DISCORD_IDENTITY_TOKEN_COLLECTION, filter)
+        .await
 }
 
 /// Creates a pending linking code for `account`, replacing its previous pending rows.
@@ -117,7 +116,8 @@ pub async fn create_code(
         .list_all_records(
             DISCORD_IDENTITY_TOKEN_COLLECTION,
             &format!(
-                "token = '' && (discord_user = '{account}' || linking_code_expires_at < @now)"
+                "token = '' && (discord_user = {} || linking_code_expires_at < @now)",
+                quote(account)
             ),
         )
         .await?;
@@ -132,7 +132,7 @@ pub async fn create_code(
     let mut last_error = String::from("No free linking code");
     for _ in 0..5 {
         let code = generate_code();
-        if find_record(pb, &format!("linking_code = '{code}'"))
+        if find_record(pb, &format!("linking_code = {}", quote(&code)))
             .await?
             .is_some()
         {
@@ -184,7 +184,10 @@ pub async fn exchange_code(
     }
     let record = find_record(
         pb,
-        &format!("linking_code = '{code}' && token = '' && linking_code_expires_at > @now"),
+        &format!(
+            "linking_code = {} && token = '' && linking_code_expires_at > @now",
+            quote(code)
+        ),
     )
     .await?
     .ok_or(RomAuthError::NotFound("Code inconnu ou expiré."))?;
@@ -201,7 +204,7 @@ pub async fn exchange_code(
     .await?;
     // Two concurrent exchanges of the same code can both pass the lookup above;
     // only the hash that ended up stored is valid, so the losing caller gets an error.
-    let stored = find_record(pb, &format!("id = '{}'", record.id)).await?;
+    let stored = find_record(pb, &format!("id = {}", quote(&record.id))).await?;
     if stored.is_none_or(|stored| stored.token != hash_token(&token)) {
         return Err(RomAuthError::NotFound("Code inconnu ou expiré."));
     }
@@ -222,7 +225,7 @@ pub async fn list_devices(
     let records: Vec<IdentityTokenRecord> = pb
         .list_all_records(
             DISCORD_IDENTITY_TOKEN_COLLECTION,
-            &format!("discord_user = '{account}' && token != ''"),
+            &format!("discord_user = {} && token != ''", quote(account)),
         )
         .await?;
     Ok(RomDeviceList {
@@ -249,7 +252,11 @@ pub async fn revoke_device(
     }
     let record = find_record(
         pb,
-        &format!("id = '{device}' && discord_user = '{account}' && token != ''"),
+        &format!(
+            "id = {} && discord_user = {} && token != ''",
+            quote(device),
+            quote(account)
+        ),
     )
     .await?
     .ok_or(RomAuthError::NotFound("Appareil introuvable."))?;
@@ -273,7 +280,10 @@ pub async fn claims_for_token(
 ) -> Result<Option<JwtClaims>, String> {
     let Some(record) = find_record(
         pb,
-        &format!("token = '{}' && is_disabled = false", hash_token(token)),
+        &format!(
+            "token = {} && is_disabled = false",
+            quote(&hash_token(token))
+        ),
     )
     .await?
     else {
@@ -282,13 +292,13 @@ pub async fn claims_for_token(
     if !valid_id(&record.discord_user) {
         return Ok(None);
     }
-    let users: Vec<LinkedUser> = pb
-        .list_all_records(
+    let user: Option<LinkedUser> = pb
+        .first_record(
             DISCORD_USERS_COLLECTION,
-            &format!("id = '{}'", record.discord_user),
+            &format!("id = {}", quote(&record.discord_user)),
         )
         .await?;
-    let Some(user) = users.into_iter().next() else {
+    let Some(user) = user else {
         return Ok(None);
     };
     if !valid_id(&user.discord_id) {

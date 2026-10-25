@@ -130,6 +130,15 @@ async fn verify_and_check_role(
             ));
         }
     }
+    // Session JWTs live 7 days: re-check the account so a removed member or a revoked
+    // administrator loses access within a minute instead of at token expiry.
+    let claims = match claims {
+        Some(claims) if !is_service => {
+            let state = crate::actions::auth_actions::account_state(&claims.sub).await;
+            crate::actions::auth_actions::reconcile_claims(claims, state)
+        }
+        claims => claims,
+    };
     if let Some(claims) = claims {
         if is_service
             && request

@@ -29,6 +29,7 @@ config = "0.15.25"
 image = "0.25.10"
 chrono-tz = "0.10"
 base64 = "0.22"
+ipnet = { version = "2", features = ["serde"] }
 
 [dev-dependencies]
 mockito = "1.7.2"

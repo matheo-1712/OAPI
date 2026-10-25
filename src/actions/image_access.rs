@@ -2,6 +2,7 @@ use crate::models::{DiscordUser, JwtClaims, MinecraftPlayer, Role};
 use crate::services::image_service::{valid_discord_id, valid_uuid};
 use crate::utils::constants::{DISCORD_USERS_COLLECTION, MINECRAFT_PLAYERS_COLLECTION};
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 
 pub async fn can_access_minecraft(uuid: &str, claims: &JwtClaims) -> Result<bool, String> {
     if !valid_uuid(uuid) {
@@ -23,13 +24,13 @@ pub(crate) async fn authorized_with_client(
     uuid: &str,
     claims: &JwtClaims,
 ) -> Result<bool, String> {
-    let players: Vec<MinecraftPlayer> = pb
-        .list_all_records(
+    let player: Option<MinecraftPlayer> = pb
+        .first_record(
             MINECRAFT_PLAYERS_COLLECTION,
-            &format!("account_id = '{}'", uuid),
+            &format!("account_id = {}", quote(uuid)),
         )
         .await?;
-    let Some(player) = players.first() else {
+    let Some(player) = player else {
         return Ok(false);
     };
     // Accept a Discord snowflake or the related PocketBase user record ID.
@@ -39,7 +40,7 @@ pub(crate) async fn authorized_with_client(
     let users: Vec<DiscordUser> = pb
         .list_all_records(
             DISCORD_USERS_COLLECTION,
-            &format!("discord_id = '{}'", claims.sub),
+            &format!("discord_id = {}", quote(&claims.sub)),
         )
         .await?;
     Ok(users.iter().any(|user| user.id == player.discord_user))

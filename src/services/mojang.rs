@@ -128,13 +128,9 @@ fn parse_profile(body: &str) -> Result<ProfileLookup, String> {
 
 /// Fetches the skin of a player from the Mojang session server at `base_url`.
 pub async fn fetch_skin(base_url: &str, uuid: &str) -> Result<ProfileLookup, String> {
-    let client = reqwest::Client::builder()
-        .timeout(Duration::from_secs(10))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .map_err(|e| format!("failed to build HTTP client: {e}"))?;
-    let response = client
+    let response = crate::utils::http::no_redirect()
         .get(profile_url(base_url, uuid))
+        .timeout(Duration::from_secs(10))
         .send()
         .await
         .map_err(|e| format!("Mojang request failed: {}", e.without_url()))?;

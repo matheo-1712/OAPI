@@ -4,6 +4,8 @@
 
 use crate::config::Config;
 use serde::Deserialize;
+use std::sync::{Mutex, OnceLock};
+use std::time::{Duration, Instant};
 use tracing::{debug, error};
 
 /// Preserve transport causes (DNS, TLS, connection, timeout) without logging query data.
@@ -23,6 +25,55 @@ fn transport_error(context: &str, error: reqwest::Error) -> String {
         source = cause.source();
     }
     message
+}
+
+/// Quotes a value as a PocketBase filter string literal, as the official SDKs do.
+///
+/// Every `'` in the value is escaped, so none can close the literal early; a value
+/// ending in `\` leaves the literal unterminated and PocketBase rejects the filter.
+/// Callers still validate identifiers: this is the last line against filter injection.
+pub fn quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "\\'"))
+}
+
+/// Superuser tokens are reused well within PocketBase's default lifetime.
+const TOKEN_TTL: Duration = Duration::from_secs(30 * 60);
+
+struct CachedToken {
+    base_url: String,
+    token: String,
+    obtained: Instant,
+}
+
+fn token_cache() -> &'static Mutex<Option<CachedToken>> {
+    static CACHE: OnceLock<Mutex<Option<CachedToken>>> = OnceLock::new();
+    CACHE.get_or_init(Default::default)
+}
+
+fn cached_token(base_url: &str) -> Option<String> {
+    let cache = token_cache().lock().ok()?;
+    cache
+        .as_ref()
+        .filter(|c| c.base_url == base_url && c.obtained.elapsed() < TOKEN_TTL)
+        .map(|c| c.token.clone())
+}
+
+fn store_token(base_url: &str, token: &str) {
+    if let Ok(mut cache) = token_cache().lock() {
+        *cache = Some(CachedToken {
+            base_url: base_url.to_owned(),
+            token: token.to_owned(),
+            obtained: Instant::now(),
+        });
+    }
+}
+
+fn forget_token(token: &str) {
+    if let Ok(mut cache) = token_cache().lock()
+        && cache.as_ref().is_some_and(|c| c.token == token)
+    {
+        *cache = None;
+    }
 }
 
 /// Pocketbase authentication response for admins.
@@ -68,7 +119,7 @@ impl PocketbaseClient {
             .token
             .as_ref()
             .ok_or("Pocketbase client not authenticated")?;
-        let response = reqwest::Client::new()
+        let response = crate::utils::http::shared()
             .post(format!(
                 "{}/api/collections/{}/records",
                 self.base_url, collection
@@ -80,6 +131,7 @@ impl PocketbaseClient {
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
+            self.forget_rejected_token(response.status());
             return Err(format!("PocketBase create failed: {}", response.status()));
         }
         response.json().await.map_err(|e| e.to_string())
@@ -96,7 +148,7 @@ impl PocketbaseClient {
             .token
             .as_ref()
             .ok_or("Pocketbase client not authenticated")?;
-        let response = reqwest::Client::new()
+        let response = crate::utils::http::shared()
             .patch(format!(
                 "{}/api/collections/{}/records/{}",
                 self.base_url, collection, id
@@ -108,6 +160,7 @@ impl PocketbaseClient {
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
+            self.forget_rejected_token(response.status());
             return Err(format!("PocketBase update failed: {}", response.status()));
         }
         response.json().await.map_err(|e| e.to_string())
@@ -136,7 +189,7 @@ impl PocketbaseClient {
                 .map_err(|e| e.to_string())?;
             form = form.part(name.to_string(), part);
         }
-        let response = reqwest::Client::new()
+        let response = crate::utils::http::shared()
             .patch(format!(
                 "{}/api/collections/{}/records/{}",
                 self.base_url, collection, id
@@ -148,6 +201,7 @@ impl PocketbaseClient {
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
+            self.forget_rejected_token(response.status());
             return Err(format!("PocketBase update failed: {}", response.status()));
         }
         response.json().await.map_err(|e| e.to_string())
@@ -159,7 +213,7 @@ impl PocketbaseClient {
             .token
             .as_ref()
             .ok_or("Pocketbase client not authenticated")?;
-        let response = reqwest::Client::new()
+        let response = crate::utils::http::shared()
             .delete(format!(
                 "{}/api/collections/{}/records/{}",
                 self.base_url, collection, id
@@ -170,9 +224,19 @@ impl PocketbaseClient {
             .await
             .map_err(|e| e.to_string())?;
         if !response.status().is_success() {
+            self.forget_rejected_token(response.status());
             return Err(format!("PocketBase delete failed: {}", response.status()));
         }
         Ok(())
+    }
+
+    /// A rejected token is dropped from the cache so the next `login` authenticates again.
+    fn forget_rejected_token(&self, status: reqwest::StatusCode) {
+        if status == reqwest::StatusCode::UNAUTHORIZED
+            && let Some(token) = &self.token
+        {
+            forget_token(token);
+        }
     }
 
     /// Creates a new Pocketbase client using configuration.
@@ -185,7 +249,13 @@ impl PocketbaseClient {
     }
 
     /// Authenticates as an admin using credentials from config.
+    /// Reuses a recent superuser token for this PocketBase instance instead of
+    /// re-authenticating (a password hash on PocketBase's side) on every request.
     pub async fn login(&mut self) -> Result<(), String> {
+        if let Some(token) = cached_token(&self.base_url) {
+            self.token = Some(token);
+            return Ok(());
+        }
         let auth = &Config::global().auth;
         let base_url = reqwest::Url::parse(&self.base_url)
             .ok()
@@ -198,8 +268,7 @@ impl PocketbaseClient {
             base_url.as_str().trim_end_matches('/')
         );
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = crate::utils::http::shared()
             .post(&url)
             .timeout(std::time::Duration::from_secs(10))
             .json(&serde_json::json!({
@@ -222,6 +291,7 @@ impl PocketbaseClient {
             .await
             .map_err(|e| format!("Failed to parse Pocketbase auth response: {}", e))?;
 
+        store_token(&self.base_url, &auth_data.token);
         self.token = Some(auth_data.token);
         debug!("Pocketbase authenticated successfully");
         Ok(())
@@ -257,6 +327,20 @@ impl PocketbaseClient {
             )
             .await?;
         Ok(response.total_items)
+    }
+
+    /// First record matching `filter`, fetched alone instead of in a 500-row page.
+    pub async fn first_record<T>(&self, collection: &str, filter: &str) -> Result<Option<T>, String>
+    where
+        T: for<'de> Deserialize<'de>,
+    {
+        let response: ListResponse<T> = self
+            .list_records_with_params(
+                collection,
+                [("filter", filter), ("page", "1"), ("perPage", "1")],
+            )
+            .await?;
+        Ok(response.items.into_iter().next())
     }
 
     /// Lists ALL records from a collection by automatically paginating.
@@ -356,8 +440,7 @@ impl PocketbaseClient {
             .as_ref()
             .ok_or_else(|| "Pocketbase client not authenticated".to_string())?;
 
-        let client = reqwest::Client::new();
-        let resp = client
+        let resp = crate::utils::http::shared()
             .get(&url)
             .timeout(std::time::Duration::from_secs(10))
             .header("Authorization", token)
@@ -376,6 +459,7 @@ impl PocketbaseClient {
             .map_err(|e| format!("Failed to get {} text: {}", description, e))?;
 
         if !status.is_success() {
+            self.forget_rejected_token(status);
             error!(
                 "Pocketbase fetch failed for {} at {}: {} - {}",
                 description, final_path, status, text
@@ -398,6 +482,37 @@ impl PocketbaseClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[tokio::test]
+    async fn first_record_fetches_a_single_row() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("GET", "/api/collections/discord_users/records")
+            .match_query(Matcher::AllOf(vec![
+                Matcher::UrlEncoded("filter".into(), "id = 'abc'".into()),
+                Matcher::UrlEncoded("perPage".into(), "1".into()),
+            ]))
+            .with_status(200)
+            .with_body(
+                r#"{"page":1,"perPage":1,"totalPages":1,"totalItems":1,"items":[{"id":"abc"}]}"#,
+            )
+            .create_async()
+            .await;
+        let pb = PocketbaseClient::for_test(server.url(), "token");
+        let record: Option<serde_json::Value> = pb
+            .first_record("discord_users", &format!("id = {}", quote("abc")))
+            .await
+            .unwrap();
+        assert_eq!(record.unwrap()["id"], "abc");
+        mock.assert_async().await;
+    }
+
+    #[test]
+    fn quoted_values_cannot_close_the_filter_literal() {
+        assert_eq!(quote("abc123"), "'abc123'");
+        assert_eq!(quote("x' || id != '"), r"'x\' || id != \''");
+        assert_eq!(quote(""), "''");
+    }
     use crate::actions::investor_actions::fetch_stats;
     use mockito::{Matcher, Server};
 
