@@ -31,12 +31,10 @@ pub async fn download(url: &str) -> Option<DynamicImage> {
     if !permitted(&url, &crate::config::Config::global().auth.pb_url) {
         return None;
     }
-    let client = reqwest::Client::builder()
+    let mut response = crate::utils::http::no_redirect()
+        .get(url)
         .timeout(Duration::from_secs(5))
-        .redirect(reqwest::redirect::Policy::none())
-        .build()
-        .ok()?;
-    let mut response = client.get(url).send().await.ok()?.error_for_status().ok()?;
+        .send().await.ok()?.error_for_status().ok()?;
     if response
         .content_length()
         .is_some_and(|length| length > MAX_BYTES as u64)

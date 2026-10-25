@@ -20,7 +20,7 @@ use axum::response::IntoResponse;
 )]
 pub async fn get_monitoring_status() -> impl IntoResponse {
     let config = &Config::global().monitoring;
-    let services = monitoring_actions::check_all_services(config).await;
+    let services = monitoring_actions::cached_status(config).await;
 
     Json(MonitoringResponse { services })
 }

@@ -100,7 +100,7 @@ impl AuthAction {
 
         Self {
             oauth_client,
-            reqwest_client: Client::new(),
+            reqwest_client: crate::utils::http::shared().clone(),
         }
     }
 
