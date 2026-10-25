@@ -106,8 +106,10 @@ fn calculate_minecraft_hash(player: &MinecraftPlayer) -> Result<String, String> 
     let colors: BTreeMap<_, _> = player.server_colors.iter().collect();
     // Version the rendering inputs and sort maps so insertion order cannot affect the key.
     let data = serde_json::to_vec(&(
-        "minecraft-card-v2",
+        "minecraft-card-v3",
         &player.account_id,
+        &player.head,
+        &player.collection_id,
         &player.playername,
         &player.platform,
         &player.first_connected_at,
@@ -120,6 +122,25 @@ fn calculate_minecraft_hash(player: &MinecraftPlayer) -> Result<String, String> 
     .map_err(|e| format!("Unable to hash Minecraft profile: {}", e))?;
     hasher.update(data);
     Ok(format!("{:x}", hasher.finalize()))
+}
+
+/// Avatar URL: the PocketBase `head` file when present, otherwise mc-heads.net.
+pub fn minecraft_avatar_url(player: &MinecraftPlayer, pb_url: &str) -> String {
+    if !player.head.is_empty() && !player.collection_id.is_empty() {
+        format!(
+            "{}/api/files/{}/{}/{}",
+            pb_url.trim_end_matches('/'),
+            player.collection_id,
+            player.id,
+            player.head
+        )
+    } else {
+        mc_heads_url(&player.account_id)
+    }
+}
+
+fn mc_heads_url(account_id: &str) -> String {
+    format!("https://mc-heads.net/avatar/{}/200", account_id)
 }
 
 /// Service for generating a Minecraft profile image summary.
@@ -171,12 +192,16 @@ pub async fn generate_minecraft_profile(player: MinecraftPlayer) -> Result<Image
     let font = Font::try_from_bytes(FONT_DATA).expect("Error loading FONT");
 
     // --- DRAW AVATAR (MINECRAFT HEAD) ---
-    let avatar_url = format!("https://mc-heads.net/avatar/{}/200", player.account_id);
-    let avatar_result = crate::utils::image_assets::download(&avatar_url).await;
+    let avatar_url = minecraft_avatar_url(&player, &crate::config::Config::global().auth.pb_url);
+    let mut avatar_result = crate::utils::image_assets::download(&avatar_url).await;
+    let fallback_url = mc_heads_url(&player.account_id);
+    if avatar_result.is_none() && avatar_url != fallback_url {
+        avatar_result = crate::utils::image_assets::download(&fallback_url).await;
+    }
 
     if let Some(avatar_img) = avatar_result {
         let avatar = avatar_img
-            .resize_exact(200, 200, FilterType::Lanczos3)
+            .resize_exact(200, 200, FilterType::Nearest)
             .to_rgba8();
         image::imageops::overlay(&mut img, &avatar, 50, 60);
     }
@@ -988,6 +1013,28 @@ mod tests {
     }
 
     #[test]
+    fn avatar_uses_pocketbase_head_when_present() {
+        let mut p = minecraft_fixture();
+        p.head = "head_x1.png".into();
+        p.collection_id = "col".into();
+        p.id = "p1".into();
+        assert_eq!(
+            minecraft_avatar_url(&p, "http://pb"),
+            "http://pb/api/files/col/p1/head_x1.png"
+        );
+    }
+
+    #[test]
+    fn avatar_falls_back_to_mc_heads() {
+        let mut p = minecraft_fixture();
+        p.head = String::new();
+        assert_eq!(
+            minecraft_avatar_url(&p, "http://pb"),
+            "https://mc-heads.net/avatar/123456781234123412341234567890ab/200"
+        );
+    }
+
+    #[test]
     fn minecraft_cache_includes_badges_server_metadata_and_dates() {
         let baseline = minecraft_fixture();
         let baseline_hash = calculate_minecraft_hash(&baseline).unwrap();
@@ -1003,6 +1050,12 @@ mod tests {
         assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
         let mut changed = baseline.clone();
         changed.first_connected_at = "2024-01-01".into();
+        assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
+        let mut changed = baseline.clone();
+        changed.head = "head_new.png".into();
+        assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
+        let mut changed = baseline.clone();
+        changed.collection_id = "other_col".into();
         assert_ne!(baseline_hash, calculate_minecraft_hash(&changed).unwrap());
         let mut changed = baseline.clone();
         changed.badges = Some(vec![

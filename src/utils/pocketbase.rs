@@ -113,6 +113,46 @@ impl PocketbaseClient {
         response.json().await.map_err(|e| e.to_string())
     }
 
+    /// Partially updates a record with text fields and PNG file fields (multipart).
+    pub async fn update_record_multipart(
+        &self,
+        collection: &str,
+        id: &str,
+        fields: &[(&str, String)],
+        files: Vec<(&str, &str, Vec<u8>)>,
+    ) -> Result<serde_json::Value, String> {
+        let token = self
+            .token
+            .as_ref()
+            .ok_or("Pocketbase client not authenticated")?;
+        let mut form = reqwest::multipart::Form::new();
+        for (name, value) in fields {
+            form = form.text(name.to_string(), value.clone());
+        }
+        for (name, file_name, bytes) in files {
+            let part = reqwest::multipart::Part::bytes(bytes)
+                .file_name(file_name.to_string())
+                .mime_str("image/png")
+                .map_err(|e| e.to_string())?;
+            form = form.part(name.to_string(), part);
+        }
+        let response = reqwest::Client::new()
+            .patch(format!(
+                "{}/api/collections/{}/records/{}",
+                self.base_url, collection, id
+            ))
+            .header("Authorization", token)
+            .timeout(std::time::Duration::from_secs(30))
+            .multipart(form)
+            .send()
+            .await
+            .map_err(|e| e.to_string())?;
+        if !response.status().is_success() {
+            return Err(format!("PocketBase update failed: {}", response.status()));
+        }
+        response.json().await.map_err(|e| e.to_string())
+    }
+
     /// Deletes a record using the API's authenticated PocketBase identity.
     pub async fn delete_record(&self, collection: &str, id: &str) -> Result<(), String> {
         let token = self
@@ -1022,5 +1062,61 @@ mod bounded_statistics_tests {
                 .is_err()
         );
         excessive.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn update_record_multipart_sends_files_and_fields() {
+        let mut server = Server::new_async().await;
+        let mock = server
+            .mock("PATCH", "/api/collections/players/records/p1")
+            .match_header(
+                "content-type",
+                Matcher::Regex("^multipart/form-data".into()),
+            )
+            .match_body(Matcher::AllOf(vec![
+                Matcher::Regex(r#"name="skin_hash""#.into()),
+                Matcher::Regex("abc:classic".into()),
+                Matcher::Regex(r#"name="head"; filename="head.png""#.into()),
+                Matcher::Regex(r#"name="skin"; filename="skin.png""#.into()),
+            ]))
+            .with_status(200)
+            .with_body(r#"{"id":"p1"}"#)
+            .create_async()
+            .await;
+        let pb = PocketbaseClient::for_test(server.url(), "token");
+
+        let result = pb
+            .update_record_multipart(
+                "players",
+                "p1",
+                &[("skin_hash", "abc:classic".to_string())],
+                vec![
+                    ("head", "head.png", vec![1, 2, 3]),
+                    ("skin", "skin.png", vec![4, 5, 6]),
+                ],
+            )
+            .await
+            .unwrap();
+
+        assert_eq!(result["id"], "p1");
+        mock.assert_async().await;
+    }
+
+    #[tokio::test]
+    async fn update_record_multipart_reports_failure() {
+        let mut server = Server::new_async().await;
+        let _mock = server
+            .mock("PATCH", "/api/collections/players/records/p1")
+            .with_status(400)
+            .create_async()
+            .await;
+        let pb = PocketbaseClient::for_test(server.url(), "token");
+
+        let error = pb
+            .update_record_multipart("players", "p1", &[], vec![("head", "head.png", vec![1])])
+            .await
+            .unwrap_err();
+
+        assert!(error.contains("400"), "{error}");
     }
 }

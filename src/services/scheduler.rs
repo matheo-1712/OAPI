@@ -9,7 +9,7 @@ use chrono::{DateTime, Duration, LocalResult, NaiveTime, TimeZone, Utc};
 use chrono_tz::Europe::Paris;
 
 use crate::config::SchedulerConfig;
-use crate::services::{badge_service, purge_service};
+use crate::services::{badge_service, purge_service, skin_service};
 use crate::utils::pocketbase::PocketbaseClient;
 
 /// Boxed future returned by a daily task.
@@ -60,8 +60,16 @@ fn badges_task(pb: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, Strin
     Box::pin(badge_service::refresh_all(pb))
 }
 
+fn skins_task(pb: &PocketbaseClient) -> BoxFuture<'_, Result<TaskSummary, String>> {
+    Box::pin(skin_service::refresh_all(pb))
+}
+
 /// Daily tasks, in execution order.
-pub const DAILY_TASKS: [(&str, TaskFn); 2] = [("purge", purge_task), ("badges", badges_task)];
+pub const DAILY_TASKS: [(&str, TaskFn); 3] = [
+    ("purge", purge_task),
+    ("badges", badges_task),
+    ("skins", skins_task),
+];
 
 /// Runs each task in order, logging its outcome; a failure does not stop the next task.
 pub async fn run_tasks(
@@ -122,7 +130,7 @@ pub fn spawn(config: &SchedulerConfig) {
     };
     if crate::config::Config::global().server.env != "production" {
         tracing::warn!(
-            "Daily tasks scheduler is enabled outside production and will purge accounts on the configured PocketBase now and at {}; set scheduler.enabled: false in config.yaml to disable",
+            "Daily tasks scheduler is enabled outside production and will purge accounts and write skins on the configured PocketBase (and call Mojang) now and at {}; set scheduler.enabled: false in config.yaml to disable",
             config.run_at
         );
     }
@@ -210,7 +218,10 @@ mod tests {
     }
 
     #[test]
-    fn daily_tasks_run_purge_before_badges() {
-        assert_eq!(DAILY_TASKS.map(|(name, _)| name), ["purge", "badges"]);
+    fn daily_tasks_run_purge_badges_then_skins() {
+        assert_eq!(
+            DAILY_TASKS.map(|(name, _)| name),
+            ["purge", "badges", "skins"]
+        );
     }
 }

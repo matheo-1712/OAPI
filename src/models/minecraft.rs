@@ -31,6 +31,12 @@ pub struct MinecraftPlayer {
     /// Player's earned badges
     #[serde(default)]
     pub badges: Option<Vec<PlayerBadge>>,
+    /// PocketBase collection id (used to build file URLs).
+    #[serde(default, rename = "collectionId")]
+    pub collection_id: String,
+    /// PocketBase file name of the player's head image (empty when absent).
+    #[serde(default)]
+    pub head: String,
 }
 /// Collection : players_stats
 #[derive(Serialize, Deserialize, ToSchema, Clone)]
