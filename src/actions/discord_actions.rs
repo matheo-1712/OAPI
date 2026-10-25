@@ -9,6 +9,7 @@ use crate::utils::constants::{
     DISCORD_USER_BADGES_COLLECTION, DISCORD_USER_STATS_COLLECTION, DISCORD_USERS_COLLECTION,
 };
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use tracing::{debug, error, warn};
 
 /// Orchestrates the process of fetching Discord data and generating a summary image.
@@ -34,7 +35,7 @@ pub(super) async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, 
     pb.login().await?;
 
     // 1. Fetch user info by Discord ID
-    let user_filter = format!("discord_id = '{}'", discord_id);
+    let user_filter = format!("discord_id = {}", quote(discord_id));
     let users: Vec<DiscordUser> = pb
         .list_bounded_records(DISCORD_USERS_COLLECTION, &user_filter)
         .await?;
@@ -52,8 +53,9 @@ pub(super) async fn fetch_discord_data(discord_id: &str) -> Result<DiscordUser, 
 
     // 2. Fetch user stats
     let filter = format!(
-        "discord_user = '{}' || discord_user = '{}'",
-        user.id, user.discord_id
+        "discord_user = {} || discord_user = {}",
+        quote(&user.id),
+        quote(&user.discord_id)
     );
 
     // 3. Fetch Badges (the 3 latest)

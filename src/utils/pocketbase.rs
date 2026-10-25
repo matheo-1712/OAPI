@@ -27,6 +27,15 @@ fn transport_error(context: &str, error: reqwest::Error) -> String {
     message
 }
 
+/// Quotes a value as a PocketBase filter string literal, as the official SDKs do.
+///
+/// Every `'` in the value is escaped, so none can close the literal early; a value
+/// ending in `\` leaves the literal unterminated and PocketBase rejects the filter.
+/// Callers still validate identifiers: this is the last line against filter injection.
+pub fn quote(value: &str) -> String {
+    format!("'{}'", value.replace('\'', "\\'"))
+}
+
 /// Superuser tokens are reused well within PocketBase's default lifetime.
 const TOKEN_TTL: Duration = Duration::from_secs(30 * 60);
 
@@ -459,6 +468,13 @@ impl PocketbaseClient {
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn quoted_values_cannot_close_the_filter_literal() {
+        assert_eq!(quote("abc123"), "'abc123'");
+        assert_eq!(quote("x' || id != '"), r"'x\' || id != \''");
+        assert_eq!(quote(""), "''");
+    }
     use crate::actions::investor_actions::fetch_stats;
     use mockito::{Matcher, Server};
 

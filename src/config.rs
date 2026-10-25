@@ -423,24 +423,19 @@ mod tests {
             #[serde(deserialize_with = "deserialize_networks")]
             trusted_proxies: Vec<ipnet::IpNet>,
         }
-        let parsed: Proxies = serde_json::from_str(
-            r#"{"trusted_proxies":["127.0.0.1","172.18.0.7/12","::1"]}"#,
-        )
-        .unwrap();
+        let parsed: Proxies =
+            serde_json::from_str(r#"{"trusted_proxies":["127.0.0.1","172.18.0.7/12","::1"]}"#)
+                .unwrap();
         let rendered: Vec<String> = parsed
             .trusted_proxies
             .iter()
             .map(ToString::to_string)
             .collect();
         assert_eq!(rendered, ["127.0.0.1/32", "172.16.0.0/12", "::1/128"]);
-        assert!(
-            serde_json::from_str::<Proxies>(r#"{"trusted_proxies":["proxy.local"]}"#).is_err()
-        );
-        let production = Config::load_from(
-            "default_config.yaml",
-            Some("deploy/config.production.yaml"),
-        )
-        .unwrap();
+        assert!(serde_json::from_str::<Proxies>(r#"{"trusted_proxies":["proxy.local"]}"#).is_err());
+        let production =
+            Config::load_from("default_config.yaml", Some("deploy/config.production.yaml"))
+                .unwrap();
         assert!(
             production
                 .server

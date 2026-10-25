@@ -12,6 +12,7 @@ use crate::utils::constants::{
     MINECRAFT_PLAYERS_COLLECTION,
 };
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use chrono::{DateTime, NaiveDateTime, Utc};
 use serde_json::{Value, json};
 
@@ -21,8 +22,8 @@ const MAX_PURGE_PER_RUN: usize = 100;
 /// Filter matching `field` against the record ID and, when known, the Discord snowflake.
 fn account_filter(field: &str, record: &str, snowflake: Option<&str>) -> String {
     match snowflake {
-        Some(s) => format!("{field} = '{record}' || {field} = '{s}'"),
-        None => format!("{field} = '{record}'"),
+        Some(s) => format!("{} = {} || {} = {}", field, quote(record), field, quote(s)),
+        None => format!("{} = {}", field, quote(record)),
     }
 }
 
@@ -63,7 +64,7 @@ async fn purge_account(
     let by_user = account_filter("discord_user", record, snowflake);
     delete_matching(pb, DISCORD_USER_STATS_COLLECTION, &by_user).await?;
     delete_matching(pb, DISCORD_USER_BADGES_COLLECTION, &by_user).await?;
-    let friends = format!("user_a = '{record}' || user_b = '{record}'");
+    let friends = format!("user_a = {} || user_b = {}", quote(record), quote(record));
     delete_matching(pb, DISCORD_FRIENDSHIPS_COLLECTION, &friends).await?;
     let tokens = account_filter("discord_user", record, None);
     delete_matching(pb, DISCORD_IDENTITY_TOKEN_COLLECTION, &tokens).await?;

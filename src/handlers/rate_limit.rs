@@ -77,7 +77,9 @@ fn anonymous_identity(ip: IpAddr) -> String {
     match ip.to_canonical() {
         IpAddr::V4(v4) => format!("ip:{v4}"),
         IpAddr::V6(v6) => {
-            let prefix = Ipv6Net::new(v6, 64).map(|net| net.trunc()).unwrap_or_default();
+            let prefix = Ipv6Net::new(v6, 64)
+                .map(|net| net.trunc())
+                .unwrap_or_default();
             format!("ip:{prefix}")
         }
     }
@@ -187,12 +189,19 @@ mod tests {
         let mut quotas = Quotas::default();
         let start = Instant::now();
         for index in 0..MAX_KEYS {
-            assert_eq!(quotas.consume(format!("ip:{index}"), "/a".into(), start), None);
+            assert_eq!(
+                quotas.consume(format!("ip:{index}"), "/a".into(), start),
+                None
+            );
         }
         let later = start + Duration::from_secs(1);
         assert_eq!(quotas.consume("ip:new".into(), "/a".into(), later), None);
         assert_eq!(quotas.entries.len(), MAX_KEYS);
-        assert!(quotas.entries.contains_key(&("ip:new".to_string(), "/a".to_string())));
+        assert!(
+            quotas
+                .entries
+                .contains_key(&("ip:new".to_string(), "/a".to_string()))
+        );
     }
 
     #[test]
@@ -203,7 +212,10 @@ mod tests {
             quotas.consume("ip:1".into(), "/a".into(), start);
         }
         quotas.last_sweep = Some(start + WINDOW);
-        assert_eq!(quotas.consume("ip:1".into(), "/a".into(), start + WINDOW), None);
+        assert_eq!(
+            quotas.consume("ip:1".into(), "/a".into(), start + WINDOW),
+            None
+        );
     }
 
     #[test]

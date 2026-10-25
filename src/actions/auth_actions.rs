@@ -4,6 +4,7 @@ use crate::models::{
 };
 use crate::utils::constants::DISCORD_USERS_COLLECTION;
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use jsonwebtoken::{DecodingKey, EncodingKey, Header, Validation, decode, encode};
 use oauth2::{
     AuthUrl, AuthorizationCode, ClientId, ClientSecret, CsrfToken, RedirectUrl, Scope,
@@ -185,7 +186,7 @@ async fn fetch_account_state(discord_id: &str) -> Result<AccountState, String> {
         .list_records_with_params(
             DISCORD_USERS_COLLECTION,
             [
-                ("filter", format!("discord_id = '{discord_id}'")),
+                ("filter", format!("discord_id = {}", quote(discord_id))),
                 ("fields", "is_admin".into()),
                 ("page", "1".into()),
                 ("perPage", "1".into()),
@@ -311,7 +312,7 @@ impl AuthAction {
         let mut pb_client = PocketbaseClient::new();
         pb_client.login().await?;
 
-        let filter = format!("discord_id='{}'", user_info.id);
+        let filter = format!("discord_id={}", quote(&user_info.id));
         let pb_users: Vec<DiscordUser> = pb_client
             .list_all_records(DISCORD_USERS_COLLECTION, &filter)
             .await?;

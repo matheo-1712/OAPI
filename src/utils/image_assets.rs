@@ -34,7 +34,11 @@ pub async fn download(url: &str) -> Option<DynamicImage> {
     let mut response = crate::utils::http::no_redirect()
         .get(url)
         .timeout(Duration::from_secs(5))
-        .send().await.ok()?.error_for_status().ok()?;
+        .send()
+        .await
+        .ok()?
+        .error_for_status()
+        .ok()?;
     if response
         .content_length()
         .is_some_and(|length| length > MAX_BYTES as u64)

@@ -7,6 +7,7 @@ use crate::utils::constants::{
     MINECRAFT_STATS_COLLECTION,
 };
 use crate::utils::pocketbase::PocketbaseClient;
+use crate::utils::pocketbase::quote;
 use std::collections::HashMap;
 use tracing::{debug, error, warn};
 
@@ -27,7 +28,7 @@ async fn fetch_minecraft_data(uuid: &str) -> Result<MinecraftPlayer, String> {
     pb.login().await?;
 
     // 1. Fetch player info by Minecraft UUID
-    let filter_user = format!("account_id = '{}'", uuid);
+    let filter_user = format!("account_id = {}", quote(uuid));
     let players: Vec<MinecraftPlayer> = pb
         .list_all_records(MINECRAFT_PLAYERS_COLLECTION, &filter_user)
         .await?;
@@ -38,8 +39,9 @@ async fn fetch_minecraft_data(uuid: &str) -> Result<MinecraftPlayer, String> {
 
     // 2. Fetch player stats
     let filter_stats = format!(
-        "account_id = '{}' || account_id = '{}'",
-        player.id, player.account_id
+        "account_id = {} || account_id = {}",
+        quote(&player.id),
+        quote(&player.account_id)
     );
     let stats: Vec<MinecraftStats> = pb
         .list_all_records(MINECRAFT_STATS_COLLECTION, &filter_stats)
@@ -47,8 +49,9 @@ async fn fetch_minecraft_data(uuid: &str) -> Result<MinecraftPlayer, String> {
 
     // 3. Fetch Badges (the 3 latest)
     let badge_filter = format!(
-        "player = '{}' || player = '{}'",
-        player.id, player.account_id
+        "player = {} || player = {}",
+        quote(&player.id),
+        quote(&player.account_id)
     );
     debug!(
         "Fetching Minecraft badges from {} with filter: {}",
