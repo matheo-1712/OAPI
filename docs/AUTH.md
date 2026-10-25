@@ -36,6 +36,8 @@ Le JWT généré contient les informations (claims) suivantes :
 
 Le cookie de session est `HttpOnly`, `SameSite=Lax` et `Secure` en HTTPS ou en production, avec une durée de sept jours. Le frontend consulte `/api/auth/me` pour connaître la connexion. `JWT_SECRET` doit contenir au moins 32 octets hors espaces de bord ; une valeur absente ou trop courte bloque le démarrage.
 
+**Révocation.** La déconnexion (`/api/auth/logout`, `/api/auth/site/logout`) invalide aussi le jeton côté serveur jusqu'à son expiration ; cette liste est en mémoire et se perd au redémarrage. Sur les routes protégées, le compte est revérifié dans PocketBase (résultat gardé 60 s) : un compte supprimé perd sa session et un administrateur dont `is_admin` est retiré redevient `Normal`. Si PocketBase est injoignable, seuls les droits administrateur sont retirés. Le rôle `LoutreInvesti`, issu de Discord, reste celui du jeton.
+
 ## 3. Middlewares
 Nous avons implémenté trois middlewares de sécurité en cascade dans `src/handlers/middleware.rs` :
 - **`require_auth`** : Valide la signature du JWT. Rejette les requêtes non authentifiées avec une erreur HTTP 401. Autorise tous les rôles valides.

@@ -45,6 +45,13 @@ fn safe_return_to(url: Option<String>) -> String {
     "/".to_string()
 }
 
+/// Logging out also invalidates the token server-side, not just the browser cookie.
+fn revoke_session(jar: &CookieJar) {
+    if let Some(cookie) = jar.get("auth_token") {
+        AuthAction::revoke_token(cookie.value());
+    }
+}
+
 fn auth_cookie(name: &'static str, value: String, seconds: i64) -> Cookie<'static> {
     Cookie::build((name, value))
         .path("/")
@@ -285,6 +292,7 @@ pub async fn me(jar: CookieJar) -> impl IntoResponse {
     )
 )]
 pub async fn logout(jar: CookieJar, Query(query): Query<AuthLogoutQuery>) -> impl IntoResponse {
+    revoke_session(&jar);
     let cookie = auth_cookie("auth_token", String::new(), 0);
 
     let return_to = safe_return_to(query.return_to);
@@ -365,6 +373,7 @@ pub async fn site_logout(
     let Some(target) = site_target(query.return_to, query.origin) else {
         return (StatusCode::BAD_REQUEST, "Site inconnu.").into_response();
     };
+    revoke_session(&jar);
 
     (jar.remove(cookie), Redirect::to(&redirect_url(&target))).into_response()
 }
