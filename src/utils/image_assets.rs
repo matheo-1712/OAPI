@@ -16,7 +16,12 @@ fn permitted(url: &reqwest::Url, pocketbase: &str) -> bool {
         && url.port().is_none()
         && matches!(
             url.host_str(),
-            Some("cdn.discordapp.com" | "media.discordapp.net" | "mc-heads.net")
+            Some(
+                "cdn.discordapp.com"
+                    | "media.discordapp.net"
+                    | "mc-heads.net"
+                    | "textures.minecraft.net"
+            )
         )
 }
 
@@ -66,6 +71,7 @@ mod tests {
             "http://127.0.0.1:8090/api/files/badges/a/icon.png",
             "https://cdn.discordapp.com/avatars/a.png",
             "https://mc-heads.net/avatar/a/200",
+            "https://textures.minecraft.net/texture/abc",
         ] {
             assert!(permitted(&reqwest::Url::parse(url).unwrap(), pb), "{url}");
         }
@@ -77,6 +83,7 @@ mod tests {
             "https://127.0.0.1/api/files/a",
             "https://cdn.discordapp.com:8443/a",
             "http://cdn.discordapp.com/a",
+            "http://textures.minecraft.net/texture/abc",
         ] {
             assert!(!permitted(&reqwest::Url::parse(url).unwrap(), pb), "{url}");
         }

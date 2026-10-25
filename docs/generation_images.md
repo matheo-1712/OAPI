@@ -23,7 +23,7 @@ Le service utilise un cache intelligent pour minimiser l'utilisation du CPU et d
 - **Spécificités** : Affiche le "Meilleur ami Loutre" (le joueur avec qui vous avez passé le plus de temps en vocal) et vos rôles préférés.
 
 ### 2. Résumé Minecraft
-- **Avatar** : Tête 3D du joueur (récupérée via son UUID).
+- **Avatar** : Tête du joueur, issue du fichier `head` PocketBase lorsqu'il est rempli, sinon de mc-heads.net (via son UUID).
 - **Stats** : Playtime, Distance (en blocs), Blocs minés/posés, Morts et Kills.
 - **Spécificités** : Affiche les **3 serveurs préférés** sous forme de badges colorés selon la couleur du serveur dans la base de données.
 

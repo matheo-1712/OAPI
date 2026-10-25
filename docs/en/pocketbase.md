@@ -31,6 +31,16 @@ let stats: Vec<MinecraftStats> = pb.list_all_records("players_stats", &filter).a
 
 ---
 
+## `players` Collection: Skin Fields
+
+Filled daily by the `skins` task (see [daily_tasks.md](../daily_tasks.md)):
+
+- `head`: file (single, 128x128 PNG), the player's head;
+- `skin`: file (single, 128x256 PNG), full-body skin render;
+- `skin_hash`: text, formatted as `<hash>:<model>` (e.g. `abc123:classic` or `abc123:slim`). This field must be created manually in PocketBase.
+
+---
+
 ## Security
 - The authentication token is stored locally within the client instance.
 - Request errors are logged via `tracing` along with the raw response body to aid in diagnostics (e.g., 400 filter errors).

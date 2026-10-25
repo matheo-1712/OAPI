@@ -42,6 +42,16 @@ CREATE UNIQUE INDEX idx_identity_linking_code ON discord_identity_token (linking
 
 ---
 
+## Collection `players` : champs de skin
+
+Remplis chaque jour par la tâche `skins` (voir [daily_tasks.md](daily_tasks.md)) :
+
+- `head` : fichier (un seul, PNG 128×128), tête du joueur ;
+- `skin` : fichier (un seul, PNG 128×256), skin en pied ;
+- `skin_hash` : texte, de la forme `<hash>:<modèle>` (par exemple `abc123:classic` ou `abc123:slim`). Ce champ est à créer à la main dans PocketBase.
+
+---
+
 ## Sécurité
 - Le jeton d'authentification (`token`) est stocké localement dans l'instance du client.
 - Les erreurs de requête sont logguées via `tracing` avec le corps de la réponse brute pour faciliter le diagnostic (ex: erreurs de filtre 400).

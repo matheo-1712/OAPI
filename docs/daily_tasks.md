@@ -1,9 +1,10 @@
 # Tâches quotidiennes
 
-OAPI exécute chaque jour deux tâches de maintenance en arrière-plan, dans cet ordre :
+OAPI exécute chaque jour trois tâches de maintenance en arrière-plan, dans cet ordre :
 
 1. **purge** : suppression des comptes Discord dont la date de suppression est passée ;
-2. **badges** : recalcul des badges de tous les comptes Discord et Minecraft.
+2. **badges** : recalcul des badges de tous les comptes Discord et Minecraft ;
+3. **skins** : mise à jour de la tête et du skin des joueurs Minecraft.
 
 Une tâche en échec n'empêche pas la suivante de s'exécuter.
 
@@ -74,6 +75,34 @@ La tâche réévalue les badges de chaque compte Discord puis de chaque joueur M
 avec les règles de [`badges.yaml`](./badges.md). Elle est silencieuse : aucune
 notification n'est envoyée. Un `badges.yaml` invalide fait échouer cette tâche
 (loggée) sans affecter la purge.
+
+## Skins Minecraft
+
+Pour chaque joueur Minecraft (`players.account_id` est un UUID ; les comptes Steam sont
+ignorés), la tâche lit le skin actuel chez Mojang et le compare à `players.skin_hash`
+(`<hash>:<modèle>`, par exemple `abc123:classic`). Si le skin a changé, ou si `head` ou
+`skin` est vide, elle génère la tête (128×128) et le skin en pied (128×256), puis les
+envoie dans `players.head` et `players.skin` avec le nouveau `skin_hash`. Un skin
+inchangé n'est pas renvoyé.
+
+**Fichiers remplacés.** Quand un skin change, PocketBase enregistre les nouveaux fichiers
+sous un nouveau nom et supprime les anciens. Le site statique Astroloutre affiche donc une
+image de tête ou de corps cassée pour ce joueur jusqu'à son prochain build.
+
+**Délai et limite Mojang.** Les requêtes à Mojang sont espacées de 1,5 s (`MOJANG_DELAY`
+dans `skin_service.rs`), et un UUID présent sur plusieurs records n'est interrogé qu'une
+fois. Si Mojang répond `429`, la tâche s'arrête, logge un avertissement et renvoie le
+résumé partiel : les joueurs non traités sont repris le lendemain.
+
+**Joueurs inconnus.** Un joueur inconnu de Mojang (profil supprimé ou inexistant) ou sans
+skin personnalisé est ignoré : ses images existantes ne sont pas effacées. Il compte en
+réussi.
+
+**Compteurs.** `processed` est le nombre de records Minecraft examinés avant l'arrêt
+éventuel, `succeeded` ceux à jour ou mis à jour, `failed` les ID de records en échec
+(profil illisible, téléchargement, rendu ou envoi). Les records du groupe qui a reçu un
+`429` comptent dans `processed` mais ni en réussi ni en échec. Le log indique en plus le
+nombre de records mis à jour.
 
 ## Redémarrage et rattrapage
 
