@@ -80,14 +80,23 @@ notification n'est envoyée. Un `badges.yaml` invalide fait échouer cette tâch
 
 Pour chaque joueur Minecraft (`players.account_id` est un UUID ; les comptes Steam sont
 ignorés), la tâche lit le skin actuel chez Mojang et le compare à `players.skin_hash`
-(`<hash>:<modèle>`, par exemple `abc123:classic`). Si le skin a changé, ou si `head` ou
-`skin` est vide, elle génère la tête (128×128) et le skin en pied (128×256), puis les
-envoie dans `players.head` et `players.skin` avec le nouveau `skin_hash`. Un skin
-inchangé n'est pas renvoyé.
+(`v2:<hash>:<modèle>`, par exemple `v2:abc123:classic`). Si le skin a changé, ou si `head` ou
+`skin` est vide, elle génère la tête (128×128) et récupère la texture brute du skin (PNG 64×64, ou 64×32
+pour les anciens skins), puis les envoie dans `players.head` et `players.skin` avec le
+nouveau `skin_hash`. Un skin inchangé n'est pas renvoyé. Le passage au format `v2:`
+régénère tous les joueurs au premier passage de la tâche.
 
 **Fichiers remplacés.** Quand un skin change, PocketBase enregistre les nouveaux fichiers
 sous un nouveau nom et supprime les anciens. Le site statique Astroloutre affiche donc une
-image de tête ou de corps cassée pour ce joueur jusqu'à son prochain build.
+image de tête ou de skin cassée pour ce joueur jusqu'à son prochain build.
+
+**Ordre de déploiement du passage à `v2`.** Déployer OAPI d'abord et laisser un passage
+complet de la tâche `skins` se terminer (1,5 s par joueur, arrêt sur un `429` Mojang puis
+reprise le lendemain : cela peut donc dépasser une journée). Ensuite seulement, builder et
+déployer le site. Sinon, chaque tête du site en ligne pointe vers des fichiers supprimés et
+retombe sur mc-heads jusqu'au prochain build. Tant que ce passage n'a pas eu lieu, le build du
+site logge `[skin3d] <joueur>: dimensions invalides (128x256)` pour chaque joueur : c'est
+attendu, ce n'est pas une régression.
 
 **Délai et limite Mojang.** Les requêtes à Mojang sont espacées de 1,5 s (`MOJANG_DELAY`
 dans `skin_service.rs`), et un UUID présent sur plusieurs records n'est interrogé qu'une

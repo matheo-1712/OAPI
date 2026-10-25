@@ -47,8 +47,8 @@ CREATE UNIQUE INDEX idx_identity_linking_code ON discord_identity_token (linking
 Remplis chaque jour par la tâche `skins` (voir [daily_tasks.md](daily_tasks.md)) :
 
 - `head` : fichier (un seul, PNG 128×128), tête du joueur ;
-- `skin` : fichier (un seul, PNG 128×256), skin en pied ;
-- `skin_hash` : texte, de la forme `<hash>:<modèle>` (par exemple `abc123:classic` ou `abc123:slim`). Ce champ est à créer à la main dans PocketBase.
+- `skin` : fichier (un seul), texture du skin telle que publiée par Mojang (PNG 64×64, ou 64×32 pour les anciens skins), lue par le site pour la vue 3D ;
+- `skin_hash` : texte, de la forme `v2:<hash>:<modèle>` (par exemple `v2:abc123:classic` ou `v2:abc123:slim`). Ce champ est à créer à la main dans PocketBase.
 
 ---
 

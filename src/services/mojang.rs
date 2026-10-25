@@ -23,9 +23,11 @@ pub struct SkinTexture {
 }
 
 impl SkinTexture {
-    /// Change marker stored in PocketBase: `<hash>:<model>`.
+    /// Change marker stored in PocketBase: `v2:<hash>:<model>`.
+    ///
+    /// The `v2:` prefix marks skins stored as raw textures; older markers never match.
     pub fn skin_hash(&self) -> String {
-        format!("{}:{}", self.hash, self.model.as_str())
+        format!("v2:{}:{}", self.hash, self.model.as_str())
     }
 }
 
@@ -224,7 +226,7 @@ mod tests {
         match lookup_with(200, body).await.unwrap() {
             ProfileLookup::Skin(skin) => {
                 assert_eq!(skin.model, SkinModel::Slim);
-                assert_eq!(skin.skin_hash(), "abc:slim");
+                assert_eq!(skin.skin_hash(), "v2:abc:slim");
             }
             other => panic!("expected a skin, got {other:?}"),
         }
