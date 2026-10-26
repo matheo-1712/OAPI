@@ -100,6 +100,15 @@ pub async fn site_cors(request: Request, next: Next) -> Response {
     response
 }
 
+/// OAPI's own pages, plus the configured websites (`site_auth`) using their session cookie.
+pub fn trusted_origin(origin: Option<&str>) -> bool {
+    let config = crate::config::Config::global();
+    let expected = reqwest::Url::parse(&config.auth.discord_redirect_url)
+        .map(|url| url.origin().ascii_serialization())
+        .unwrap_or_default();
+    origin.is_some_and(|origin| origin == expected || config.is_site_origin(origin))
+}
+
 /// Base logic to verify token and optionally check minimum role
 async fn verify_and_check_role(
     _jar: CookieJar,
@@ -115,20 +124,12 @@ async fn verify_and_check_role(
     if !is_service
         && !request.method().is_safe()
         && let Some(origin) = request.headers().get(axum::http::header::ORIGIN)
+        && !trusted_origin(origin.to_str().ok())
     {
-        let config = crate::config::Config::global();
-        let expected = reqwest::Url::parse(&config.auth.discord_redirect_url)
-            .map(|url| url.origin().ascii_serialization())
-            .unwrap_or_default();
-        // OAPI's own pages, plus the configured website (site_auth.url) using its session cookie
-        let origin = origin.to_str().ok();
-        let from_site = origin.is_some_and(|origin| config.is_site_origin(origin));
-        if origin != Some(expected.as_str()) && !from_site {
-            return Err((
-                StatusCode::FORBIDDEN,
-                "Cross-origin request rejected.".into(),
-            ));
-        }
+        return Err((
+            StatusCode::FORBIDDEN,
+            "Cross-origin request rejected.".into(),
+        ));
     }
     // Session JWTs live 7 days: re-check the account so a removed member or a revoked
     // administrator loses access within a minute instead of at token expiry.

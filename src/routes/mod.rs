@@ -6,10 +6,11 @@
 use crate::config::Config;
 use crate::handlers::{
     admin_handler, auth_handler, discord_handler, friends_handler, investor_handler, middleware,
-    minecraft_handler, monitoring_handler, rom_auth_handler,
+    minecraft_handler, monitoring_handler, rom_auth_handler, save_link_handler,
 };
 use axum::{
     Router,
+    extract::DefaultBodyLimit,
     routing::{get, post},
 };
 use tower_http::services::ServeFile;
@@ -65,6 +66,13 @@ pub fn api_routes() -> Router {
             "/auth/rom/devices/:device/revoke",
             post(rom_auth_handler::revoke),
         )
+        .route_layer(axum::middleware::from_fn(middleware::require_auth))
+        .route_layer(axum::middleware::from_fn(middleware::site_cors));
+
+    // MKDS save linking: website session only, multipart upload bounded to one save.
+    let save_link_routes = Router::new()
+        .route("/saves/mkds/link", post(save_link_handler::link_mkds_save))
+        .layer(DefaultBodyLimit::max(save_link_handler::MAX_UPLOAD_BYTES))
         .route_layer(axum::middleware::from_fn(middleware::require_auth))
         .route_layer(axum::middleware::from_fn(middleware::site_cors));
 
@@ -163,6 +171,7 @@ pub fn api_routes() -> Router {
         .route("/auth/rom/token", post(rom_auth_handler::exchange))
         .merge(site_auth_routes)
         .merge(rom_site_routes)
+        .merge(save_link_routes)
         .merge(site_protected_routes)
         .merge(friends_read_routes)
         .merge(friends_routes)
@@ -430,6 +439,54 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[tokio::test]
+    async fn save_linking_requires_a_session_and_rejects_foreign_origins() {
+        config::init();
+        let site = config::Config::global()
+            .site_origin()
+            .expect("site_auth.url must be configured")
+            .to_string();
+        for cookie in ["", "auth_token=forged"] {
+            let response = api_routes()
+                .oneshot(
+                    Request::builder()
+                        .method("POST")
+                        .uri("/saves/mkds/link")
+                        .header("cookie", cookie)
+                        .header("origin", site.as_str())
+                        .header("content-type", "multipart/form-data; boundary=x")
+                        .body(Body::from("--x--\r\n"))
+                        .unwrap(),
+                )
+                .await
+                .unwrap();
+            assert_eq!(response.status(), StatusCode::UNAUTHORIZED);
+            assert_eq!(response.headers()["cache-control"], "no-store");
+            assert_eq!(
+                response.headers()["access-control-allow-origin"],
+                site.as_str()
+            );
+        }
+        let response = api_routes()
+            .oneshot(
+                Request::builder()
+                    .method("POST")
+                    .uri("/saves/mkds/link")
+                    .header("origin", "https://evil.example")
+                    .body(Body::empty())
+                    .unwrap(),
+            )
+            .await
+            .unwrap();
+        assert_eq!(response.status(), StatusCode::FORBIDDEN);
+        assert!(
+            response
+                .headers()
+                .get("access-control-allow-origin")
+                .is_none()
+        );
     }
 
     #[tokio::test]

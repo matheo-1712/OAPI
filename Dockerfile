@@ -15,7 +15,7 @@ COPY --from=builder /build/target/release/OAPI /usr/local/bin/OAPI
 COPY public ./public
 COPY default_config.yaml badges.yaml ./
 COPY deploy/config.production.yaml ./config.yaml
-RUN mkdir generated_images && chown oapi:oapi generated_images
+RUN mkdir -p generated_images data/adln_links && chown oapi:oapi generated_images && chown -R oapi:oapi data && chmod 700 data/adln_links
 USER 10001:10001
 ARG PB_URL=http://pocketbase:8090
 ENV OAPI_ENV=production RUST_LOG=info PB_URL=${PB_URL}
