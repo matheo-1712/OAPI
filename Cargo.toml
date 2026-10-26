@@ -4,7 +4,7 @@ version = "1.1.0"
 edition = "2024"
 
 [dependencies]
-axum = "0.7"
+axum = { version = "0.7", features = ["multipart"] }
 tokio = { version = "1", features = ["full"] }
 utoipa = "4"
 utoipa-swagger-ui = { version = "7", features = ["axum"] }
@@ -30,6 +30,9 @@ image = "0.25.10"
 chrono-tz = "0.10"
 base64 = "0.22"
 ipnet = { version = "2", features = ["serde"] }
+aes-gcm = "0.10"
+crc32fast = "1"
+hmac = "0.12"
 
 [dev-dependencies]
 mockito = "1.7.2"

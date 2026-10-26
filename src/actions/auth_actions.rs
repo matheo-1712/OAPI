@@ -1,3 +1,4 @@
+use crate::actions::adl_onboarding::{self, DiscordIdentity};
 use crate::config::Config;
 use crate::models::{
     DiscordMemberResponse, DiscordOAuthUser, DiscordUser, JwtClaims, Role, SessionProfile,
@@ -15,7 +16,7 @@ use sha2::{Digest, Sha256};
 use std::collections::HashMap;
 use std::sync::{Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
-use tracing::{debug, error};
+use tracing::{debug, error, warn};
 
 /// Handles Discord OAuth2 flow, user validation via PocketBase, and JWT management.
 pub struct AuthAction {
@@ -201,6 +202,13 @@ async fn fetch_account_state(discord_id: &str) -> Result<AccountState, String> {
     })
 }
 
+/// Drops the cached state of an account whose `discord_users` record was just created.
+pub fn forget_account_state(discord_id: &str) {
+    if let Ok(mut states) = account_states().lock() {
+        states.remove(discord_id);
+    }
+}
+
 /// Live (at most [`ACCOUNT_STATE_TTL`] old) state of a session's account.
 pub async fn account_state(discord_id: &str) -> Result<AccountState, String> {
     if let Ok(states) = account_states().lock()
@@ -317,13 +325,44 @@ impl AuthAction {
             .first_record(DISCORD_USERS_COLLECTION, &filter)
             .await?;
 
+        // First sign-in: register the member through the shared ADL onboarding.
         let pb_user = match pb_user {
             Some(u) => u,
             None => {
-                error!("User {} not authorized in Pocketbase", user_info.username);
-                return Err("User not authorized in Pocketbase".to_string());
+                let identity = DiscordIdentity {
+                    discord_id: user_info.id.clone(),
+                    username: user_info
+                        .global_name
+                        .clone()
+                        .filter(|name| !name.trim().is_empty())
+                        .unwrap_or_else(|| user_info.username.clone()),
+                    discord_tag: user_info.username.clone(),
+                    avatar_url: user_info
+                        .avatar
+                        .as_deref()
+                        .and_then(|hash| discord_avatar_url(&user_info.id, hash)),
+                };
+                let id = adl_onboarding::ensure_discord_user(&pb_client, &identity).await?;
+                pb_client
+                    .first_record(DISCORD_USERS_COLLECTION, &format!("id={}", quote(&id)))
+                    .await?
+                    .ok_or("Discord user missing after onboarding")?
             }
         };
+        // The DS Games player is ensured on every sign-in; a failure never blocks the login
+        // (the save-link route ensures it again).
+        let playername = user_info
+            .global_name
+            .clone()
+            .filter(|name| !name.trim().is_empty())
+            .unwrap_or_else(|| user_info.username.clone());
+        let player = async {
+            let platform = adl_onboarding::ds_games_platform(&pb_client).await?;
+            adl_onboarding::ensure_ds_player(&pb_client, &pb_user.id, &platform, &playername).await
+        };
+        if let Err(error) = player.await {
+            warn!("DS Games player onboarding failed: {}", error);
+        }
 
         debug!(
             "User {} found in Pocketbase. is_admin: {}",

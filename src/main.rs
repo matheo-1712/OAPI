@@ -46,6 +46,7 @@ use utoipa_swagger_ui::SwaggerUi;
         handlers::rom_auth_handler::exchange,
         handlers::rom_auth_handler::devices,
         handlers::rom_auth_handler::revoke,
+        handlers::save_link_handler::link_mkds_save,
         handlers::discord_handler::create_discord_summary_by_id,
         handlers::discord_handler::create_my_discord_summary,
         handlers::minecraft_handler::create_minecraft_summary_by_id,
@@ -338,6 +339,7 @@ mod openapi_tests {
             ("/auth/rom/token", "post"),
             ("/auth/rom/devices", "get"),
             ("/auth/rom/devices/{device}/revoke", "post"),
+            ("/saves/mkds/link", "post"),
         ] {
             assert!(
                 json["paths"][format!("{base}{path}")][method].is_object(),
@@ -354,7 +356,7 @@ mod openapi_tests {
             json["paths"][&personal_image_path]["post"]["security"][0],
             serde_json::json!({"session_cookie":[]})
         );
-        assert_eq!(json["paths"].as_object().unwrap().len(), 31);
+        assert_eq!(json["paths"].as_object().unwrap().len(), 32);
         for item in json["paths"].as_object().unwrap().values() {
             for operation in item.as_object().unwrap().values() {
                 assert!(operation["responses"]["429"].is_object());

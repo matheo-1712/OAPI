@@ -16,6 +16,7 @@ services:
       - "9003:9003"
     volumes:
       - generated_images:/app/generated_images
+      - adln_links:/app/data/adln_links
       - ./deploy/config.production.yaml:/app/config.yaml:ro
     read_only: true
     tmpfs:
@@ -33,6 +34,7 @@ services:
 
 volumes:
   generated_images:
+  adln_links:
 
 networks:
   pocketbase:

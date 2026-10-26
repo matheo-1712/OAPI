@@ -7,7 +7,7 @@ OAPI utilise Discord OAuth2 pour authentifier les utilisateurs. Plutôt que de s
 
 ## 1. Le flux OAuth2
 1. **Route de Connexion (`/api/auth/login`)** : Quand un utilisateur clique sur "Se connecter", cette route inclut son URL de départ dans un état OAuth signé et crée un cookie temporaire `oauth_state`, puis le redirige vers la page d'autorisation de Discord.
-2. **Route de Retour (`/api/auth/callback`)** : Une fois que Discord a autorisé l'utilisateur, il est redirigé ici avec un `code` temporaire. Le serveur l'échange contre un jeton d'accès, récupère le profil Discord et ses rôles, vérifie l'existence de l'utilisateur dans PocketBase, génère un JWT, crée le cookie `auth_token`, et redirige l'utilisateur vers son URL de retour incluse dans le state signé.
+2. **Route de Retour (`/api/auth/callback`)** : Une fois que Discord a autorisé l'utilisateur, il est redirigé ici avec un `code` temporaire. Le serveur l'échange contre un jeton d'accès, récupère le profil Discord et ses rôles, retrouve l'utilisateur dans PocketBase ou le crée (avec son joueur DS Games, voir [save_link.md](save_link.md)), génère un JWT, crée le cookie `auth_token`, et redirige l'utilisateur vers son URL de retour incluse dans le state signé.
 3. **Route de Déconnexion (`/api/auth/logout`)** : Supprime le cookie `auth_token` et redirige l'utilisateur vers la page d'accueil ou l'URL de retour.
 
 ### Connexion depuis le site (Astroloutre)

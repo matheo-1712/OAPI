@@ -5,3 +5,4 @@ public/generated_images
 config.yaml
 .env
 !.env.example
+/data

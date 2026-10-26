@@ -43,6 +43,9 @@ pub struct DiscordOAuthUser {
     pub username: String,
     pub discriminator: String,
     pub avatar: Option<String>,
+    /// Display name; `None` when the account only has a username.
+    #[serde(default)]
+    pub global_name: Option<String>,
 }
 
 /// Structure representing a user's membership in a Discord guild.

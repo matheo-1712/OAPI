@@ -42,6 +42,12 @@ CREATE UNIQUE INDEX idx_identity_linking_code ON discord_identity_token (linking
 
 ---
 
+## Collection `adln_devices`
+
+Identifiants d'appareil des sauvegardes Mario Kart DS liées (voir [save_link.md](save_link.md)) : `player` (relation vers `players`), `secret_ciphertext`, `revoked`, `games`. Règles d'accès vides (administrateurs uniquement) : la collection ne doit jamais être lisible publiquement.
+
+---
+
 ## Collection `players` : champs de skin
 
 Remplis chaque jour par la tâche `skins` (voir [daily_tasks.md](daily_tasks.md)) :
